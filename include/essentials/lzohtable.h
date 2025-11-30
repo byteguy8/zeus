@@ -57,6 +57,14 @@ void lzohtable_clear_help(const void *extra, lzohtable_clean_up *clean_up_helper
 int lzohtable_put(size_t key_size, const void *key, const void *value, LZOHTable *table, lzohtable_hash_t *out_hash);
 
 int lzohtable_put_ck(size_t key_size, const void *key, const void *value, LZOHTable *table, lzohtable_hash_t *out_hash);
+int lzohtable_put_help(
+    size_t key_size,
+    const void *key,
+    const void *value,
+    LZOHTable *table,
+    void **out_value,
+    lzohtable_hash_t *out_hash
+);
 
 int lzohtable_put_ckv(size_t key_size, const void *key, size_t value_size, const void *value, LZOHTable *table, lzohtable_hash_t *out_hash);
 

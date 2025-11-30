@@ -18,6 +18,9 @@
 
 #define POOL_DEFAULT_ALLOC_LEN 1024
 
+#define ALLOC_VALUE()(lzpool_alloc_x(POOL_DEFAULT_ALLOC_LEN, VMU_VALUES_POOL))
+#define DEALLOC_VALUE(_ptr)(lzpool_dealloc(_ptr))
+
 #define ALLOC_STR_OBJ()(lzpool_alloc_x(POOL_DEFAULT_ALLOC_LEN, VMU_STR_OBJS_POOL))
 #define DEALLOC_STR_OBJ(_ptr)(lzpool_dealloc(_ptr))
 
@@ -62,6 +65,11 @@ typedef struct pass_value{
 
 static const int64_t IndexableMaxValue =
 	SIZE_MAX < INT64_MAX ? (int64_t)SIZE_MAX : INT64_MAX;
+
+static void clean_up_dict(void *key, void *value, void *extra){
+    vmu_destroy_value(key);
+    vmu_destroy_value(value);
+}
 
 //----------------------------------------------------------------//
 //                       PRIVATE INTERFACE                        //
@@ -1488,18 +1496,14 @@ void vmu_print_value(FILE *stream, Value value){
     }
 }
 
-inline Value *vmu_clone_value(Value value, VM *vm){
-    Value *cloned_value = MEMORY_ALLOC(VMU_FRONT_ALLOCATOR, Value, 1);
+inline Value *vmu_clone_value(VM *vm, Value value){
+    Value *cloned_value = ALLOC_VALUE();
     *cloned_value = value;
     return cloned_value;
 }
 
-inline void vmu_destroy_value(Value *value, VM *vm){
-    if(!value){
-        return;
-    }
-
-    MEMORY_DEALLOC(VMU_FRONT_ALLOCATOR, Value, 1, value);
+inline void vmu_destroy_value(Value *value){
+    DEALLOC_VALUE(value);
 }
 
 inline int vmu_create_str(char runtime, size_t raw_str_len, char *raw_str, VM *vm, StrObj **out_str_obj){
@@ -2062,7 +2066,7 @@ inline void vmu_destroy_dict(DictObj *dict_obj, VM *vm){
         return;
     }
 
-    LZOHTABLE_DESTROY(dict_obj->key_values);
+    lzohtable_destroy_help(NULL, clean_up_dict, dict_obj->key_values);
     DEALLOC_DICT_OBJ(dict_obj);
 }
 
@@ -2072,14 +2076,45 @@ inline void vmu_dict_put(Value key, Value value, DictObj *dict_obj, VM *vm){
     }
 
     LZOHTable *keys_values = dict_obj->key_values;
+    void *out_value = NULL;
 
-    lzohtable_put_ckv(VALUE_SIZE, &key, VALUE_SIZE, &value, keys_values, NULL);
+    lzohtable_put_help(
+        VALUE_SIZE,
+        vmu_clone_value(vm, key),
+        vmu_clone_value(vm, value),
+        keys_values,
+        &out_value,
+        NULL
+    );
+
+    if(out_value){
+        vmu_destroy_value(out_value);
+    }
 }
 
-inline void vmu_dict_raw_put_str_value(char *str, Value value, DictObj *dict_obj, VM *vm){
-    size_t str_len = strlen(str);
-    LZOHTable *keys_values = dict_obj->key_values;
-    lzohtable_put_ckv(str_len, str, VALUE_SIZE, &value, keys_values, NULL);
+inline void vmu_dict_put_cstr_value(const char *str, Value value, DictObj *dict_obj, VM *vm){
+    size_t str_len;
+    char *cloned_str = memory_clone_cstr(VMU_FRONT_ALLOCATOR, str, &str_len);
+    StrObj *key_str_obj = NULL;
+
+    if(vmu_create_str(1, str_len, cloned_str, vm, &key_str_obj)){
+        memory_destroy_cstr(VMU_FRONT_ALLOCATOR, cloned_str);
+    }
+
+    void *out_value = NULL;
+
+    lzohtable_put_help(
+        VALUE_SIZE,
+        vmu_clone_value(vm, OBJ_VALUE(key_str_obj)),
+        vmu_clone_value(vm, value),
+        dict_obj->key_values,
+        &out_value,
+        NULL
+    );
+
+    if(out_value){
+        vmu_destroy_value(out_value);
+    }
 }
 
 inline int vmu_dict_contains(Value key, DictObj *dict_obj){
@@ -2098,7 +2133,13 @@ inline Value vmu_dict_get(Value key, DictObj *dict_obj, VM *vm){
 }
 
 inline void vmu_dict_remove(Value key, DictObj *dict_obj){
-    LZOHTABLE_REMOVE(VALUE_SIZE, &key, dict_obj->key_values);
+    lzohtable_remove_help(
+        VALUE_SIZE,
+        &key,
+        NULL,
+        clean_up_dict,
+        dict_obj->key_values
+    );
 }
 
 inline RecordObj *vmu_create_record(uint16_t length, VM *vm){
@@ -2116,7 +2157,7 @@ inline void vmu_destroy_record(RecordObj *record_obj, VM *vm){
         return;
     }
 
-    LZOHTABLE_DESTROY(record_obj->attrs);
+    lzohtable_destroy_help(NULL, clean_up_dict, record_obj->attrs);
     DEALLOC_RECORD_OBJ(record_obj);
 }
 
@@ -2133,7 +2174,13 @@ inline void vmu_record_insert_attr(size_t key_size, char *key, Value value, Reco
         return;
     }
 
-    lzohtable_put_ckv(key_size, key, VALUE_SIZE, &value, attrs, NULL);
+    lzohtable_put_ck(
+        key_size,
+        key,
+        vmu_clone_value(vm, value),
+        attrs,
+        NULL
+    );
 }
 
 inline void vmu_record_set_attr(size_t key_size, char *key, Value value, RecordObj *record_obj, VM *vm){
@@ -2145,7 +2192,11 @@ inline void vmu_record_set_attr(size_t key_size, char *key, Value value, RecordO
         return;
     }
 
-    vmu_error(vm, "Failed to update record: attribute '%s' does not exist", key);
+    vmu_error(
+        vm,
+        "Failed to update record: attribute '%s' does not exist",
+        key
+    );
 }
 
 inline Value vmu_record_get_attr(size_t key_size, char *key, RecordObj *record_obj, VM *vm){

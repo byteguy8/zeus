@@ -408,6 +408,42 @@ int lzohtable_put_ck(size_t key_size, const void *key, const void *value, LZOHTa
     return 0;
 }
 
+int lzohtable_put_help(
+    size_t key_size,
+    const void *key,
+    const void *value,
+    LZOHTable *table,
+    void **out_value,
+    lzohtable_hash_t *out_hash
+){
+    if(LZOHTABLE_LOAD_FACTOR(table) >= table->lfth && copy_paste_slots(table)){
+        return 1;
+    }
+
+    lzohtable_hash_t hash = fnv_1a_hash(key_size, key);
+    LZOHTableSlot moving_slot = (LZOHTableSlot){
+        .used = 1,
+        .hash = hash,
+        .probe = 0,
+        .kcpy = 0,
+        .vcpy = 0,
+        .key_size = key_size,
+        .value_size = 0,
+        .key = (void *)key,
+        .value = (void *)value
+    };
+
+    if(robin_hood_insert(table->m, moving_slot, table->slots, NULL, out_value, NULL) == 3){
+        table->n++;
+    }
+
+    if(out_hash){
+        *out_hash = hash;
+    }
+
+    return 0;
+}
+
 int lzohtable_put_ckv(size_t key_size, const void *key, size_t value_size, const void *value, LZOHTable *table, lzohtable_hash_t *out_hash){
     LZOHTableAllocator *allocator = table->allocator;
     void *copied_key = MEMORY_ALLOC(char, key_size, allocator);

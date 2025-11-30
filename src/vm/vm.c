@@ -2242,6 +2242,7 @@ void vm_initialize(VM *vm){
     vm->exception_stack = NULL;
 
     lzpool_init(sizeof(Exception), (LZPoolAllocator *)VMU_FRONT_ALLOCATOR, &vm->exceptions_pool);
+    lzpool_init(sizeof(Value), (LZPoolAllocator *)VMU_FRONT_ALLOCATOR, &vm->values_pool);
     lzpool_init(sizeof(StrObj), (LZPoolAllocator *)VMU_FRONT_ALLOCATOR, &vm->str_objs_pool);
     lzpool_init(sizeof(ArrayObj), (LZPoolAllocator *)VMU_FRONT_ALLOCATOR, &vm->array_objs_pool);
     lzpool_init(sizeof(ListObj), (LZPoolAllocator *)VMU_FRONT_ALLOCATOR, &vm->list_objs_pool);

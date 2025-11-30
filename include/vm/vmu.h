@@ -11,6 +11,7 @@
 
 #define VMU_VM ((VM *)context)
 
+#define VMU_VALUES_POOL (&(vm->values_pool))
 #define VMU_STR_OBJS_POOL (&(vm->str_objs_pool))
 #define VMU_ARRAY_OBJS_POOL (&(vm->array_objs_pool))
 #define VMU_LIST_OBJS_POOL (&(vm->list_objs_pool))
@@ -96,8 +97,8 @@ char *vmu_value_to_json(
 );
 void vmu_print_value(FILE *stream, Value value);
 
-Value *vmu_clone_value(Value value, VM *vm);
-void vmu_destroy_value(Value *value, VM *vm);
+Value *vmu_clone_value(VM *vm, Value value);
+void vmu_destroy_value(Value *value);
 //----------------------------------------------------------------//
 //                      OBJECTS MANIPULATION                      //
 //----------------------------------------------------------------//
@@ -147,7 +148,7 @@ Value vmu_list_remove_at(int64_t idx, ListObj *list_obj, VM *vm);
 DictObj *vmu_create_dict(VM *vm);
 void vmu_destroy_dict(DictObj *dict_obj, VM *vm);
 void vmu_dict_put(Value key, Value value, DictObj *dict_obj, VM *vm);
-void vmu_dict_raw_put_str_value(char *str, Value value, DictObj *dict_obj, VM *vm);
+void vmu_dict_put_cstr_value(const char *str, Value value, DictObj *dict_obj, VM *vm);
 int vmu_dict_contains(Value key, DictObj *dict_obj);
 Value vmu_dict_get(Value key, DictObj *dict_obj, VM *vm);
 void vmu_dict_remove(Value key, DictObj *dict_obj);

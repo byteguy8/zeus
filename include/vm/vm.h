@@ -77,6 +77,7 @@ typedef struct vm{
     ObjList black_objs;
 //--------------------------------  POOLS  ---------------------------------//
     LZPool exceptions_pool;
+    LZPool values_pool;
     LZPool str_objs_pool;
     LZPool array_objs_pool;
     LZPool list_objs_pool;
