@@ -1524,7 +1524,7 @@ inline int vmu_create_str(char runtime, size_t raw_str_len, char *raw_str, VM *v
     str_obj->len = raw_str_len;
     str_obj->buff = raw_str;
 
-    lzohtable_put_ck(len, raw_str, str_obj, runtime_strs, NULL);
+    lzohtable_put(len, raw_str, str_obj, runtime_strs, NULL);
     *out_str_obj = str_obj;
 
     return 0;
