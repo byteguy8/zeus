@@ -3,11 +3,12 @@
 
 #include "vm/obj.h"
 #include "vm/vm.h"
-#include "vm/xoshiro256.h"
 #include "vm/vmu.h"
 #include "vm/vm_factory.h"
 #include "vm/types_utils.h"
-#include "vm/native/native_random.h"
+
+#include "native/xoshiro256.h"
+#include "native/native_random.h"
 
 #include <stdint.h>
 #include <stdlib.h>

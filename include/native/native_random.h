@@ -3,12 +3,12 @@
 
 #include "essentials/memory.h"
 
-#include "native.h"
-
 #include "vm/obj.h"
 #include "vm/types_utils.h"
-#include "vm/xoshiro256.h"
 #include "vm/vmu.h"
+
+#include "native.h"
+#include "xoshiro256.h"
 
 typedef struct random_native{
 	NativeHeader header;

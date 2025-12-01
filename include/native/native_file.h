@@ -2,6 +2,7 @@
 #define FILE_NATIVE_H
 
 #include "native.h"
+
 #include "vm/vmu.h"
 
 #include <stdint.h>

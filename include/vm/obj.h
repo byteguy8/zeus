@@ -1,7 +1,6 @@
 #ifndef OBJ_H
 #define OBJ_H
 
-#include "xoshiro256.h"
 #include "essentials/dynarr.h"
 #include "value.h"
 #include "native_fn.h"

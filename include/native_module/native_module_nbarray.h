@@ -2,10 +2,11 @@
 #define NATIVE_MODULE_NBUFF_H
 
 #include "native/native_nbarray.h"
-#include "native_module.h"
-#include "obj.h"
-#include "types_utils.h"
-#include "vmu.h"
+
+#include "vm/obj.h"
+#include "vm/vm_factory.h"
+#include "vm/types_utils.h"
+#include "vm/vmu.h"
 
 #include <limits.h>
 #include <string.h>
@@ -230,7 +231,7 @@ Value native_fn_nbarray_to_str(uint8_t argsc, Value *values, Value target, void 
 		"array",
 		VMU_VM
 	);
-    size_t len = validate_value_len_arg(values[1], 1, "len", VMU_VM);
+    size_t len = validate_value_len_arg(values[1], 2, "len", VMU_VM);
 	size_t nbarray_len = nbarray->len;
     StrObj *str_obj = NULL;
 
@@ -243,9 +244,9 @@ Value native_fn_nbarray_to_str(uint8_t argsc, Value *values, Value target, void 
         );
     }
 
-    unsigned char *buff = MEMORY_ALLOC(
+    char *buff = MEMORY_ALLOC(
         VMU_NATIVE_FRONT_ALLOCATOR,
-        unsigned char,
+        char,
         len + 1
     );
 
@@ -255,7 +256,7 @@ Value native_fn_nbarray_to_str(uint8_t argsc, Value *values, Value target, void 
 	if(vmu_create_str(
 		1,
 		len,
-		(char *)nbarray->bytes,
+		buff,
 		VMU_VM,
 		&str_obj
 	)){
@@ -281,16 +282,16 @@ Value native_fn_nbarray_create(uint8_t argsc, Value *values, Value target, void 
 	return OBJ_VALUE(native_obj);
 }
 
-void nbarray_module_init(Allocator *allocator){
-    nbarray_native_module = vm_factory_create_native_module(allocator, "nbarray");
+void nbarray_module_init(const Allocator *allocator){
+    nbarray_native_module = vm_factory_native_module_create(allocator, "nbarray");
 
-    vm_factory_add_native_fn(nbarray_native_module, "len", 1, native_fn_nbarray_len);
-    vm_factory_add_native_fn(nbarray_native_module, "set", 2, native_fn_nbarray_set);
-    vm_factory_add_native_fn(nbarray_native_module, "cpy", 5, native_fn_nbarray_cpy);
-    vm_factory_add_native_fn(nbarray_native_module, "mov", 5, native_fn_nbarray_mov);
-    vm_factory_add_native_fn(nbarray_native_module, "clone", 1, native_fn_nbarray_clone);
-    vm_factory_add_native_fn(nbarray_native_module, "to_str", 2, native_fn_nbarray_to_str);
-    vm_factory_add_native_fn(nbarray_native_module, "create", 1, native_fn_nbarray_create);
+    vm_factory_native_module_add_native_fn(nbarray_native_module, "len", 1, native_fn_nbarray_len);
+    vm_factory_native_module_add_native_fn(nbarray_native_module, "set", 2, native_fn_nbarray_set);
+    vm_factory_native_module_add_native_fn(nbarray_native_module, "cpy", 5, native_fn_nbarray_cpy);
+    vm_factory_native_module_add_native_fn(nbarray_native_module, "mov", 5, native_fn_nbarray_mov);
+    vm_factory_native_module_add_native_fn(nbarray_native_module, "clone", 1, native_fn_nbarray_clone);
+    vm_factory_native_module_add_native_fn(nbarray_native_module, "to_str", 2, native_fn_nbarray_to_str);
+    vm_factory_native_module_add_native_fn(nbarray_native_module, "create", 1, native_fn_nbarray_create);
 }
 
 #endif

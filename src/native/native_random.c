@@ -1,6 +1,6 @@
 #include "native_random.h"
 #include "native.h"
-#include "vmu.h"
+#include "vm/vmu.h"
 
 static void random_native_destroy(void *native, Allocator *allocator){
 	MEMORY_DEALLOC(allocator, RandomNative, 1, native);

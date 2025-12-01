@@ -21,13 +21,15 @@ FLAGS               := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR)
 
 FLAGS.ESSENTIALS    := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR)/essentials
 FLAGS.SCOPE_MANAGER := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR)/scope_manager -I$(INCLUDE_DIR)
-FLAGS.NATIVES       := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR)/vm -I$(INCLUDE_DIR)/vm/native -I$(INCLUDE_DIR)
+FLAGS.NATIVES       := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR) -I$(INCLUDE_DIR)/native
 FLAGS.VM            := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR)/vm -I$(INCLUDE_DIR)
 
 ESSENTIALS_OBJS     := lzbstr.o dynarr.o lzohtable.o lzarena.o lzpool.o lzflist.o memory.o
-SCOPE_MANAGER_OBJS  := scope_manager.o
-VM_OBJS             := splitmix64.o xoshiro256.o vm_factory.o native.o native_random.o native_nbarray.o native_file.o obj.o vmu.o vm.o
+NATIVES_OBJS        := splitmix64.o xoshiro256.o
+SCOPE_MANAGER_OBJS  := scope_manager.o native.o native_random.o native_nbarray.o native_file.o
+VM_OBJS             := vm_factory.o obj.o vmu.o vm.o
 OBJS                := $(ESSENTIALS_OBJS) \
+					   $(NATIVES_OBJS) \
 					   $(SCOPE_MANAGER_OBJS) \
                        $(VM_OBJS) \
 					   utils.o lexer.o \
@@ -47,20 +49,8 @@ vmu.o:
 	$(COMPILER) -c -o $(OUT_DIR)/vmu.o $(FLAGS.VM) $(SRC_DIR)/vm/vmu.c
 obj.o:
 	$(COMPILER) -c -o $(OUT_DIR)/obj.o $(FLAGS.VM) $(SRC_DIR)/vm/obj.c
-native_file.o:
-	$(COMPILER) -c -o $(OUT_DIR)/native_file.o $(FLAGS.NATIVES) $(SRC_DIR)/vm/native/native_file.c
-native_nbarray.o:
-	$(COMPILER) -c -o $(OUT_DIR)/native_nbarray.o $(FLAGS.NATIVES) $(SRC_DIR)/vm/native/native_nbarray.c
-native_random.o:
-	$(COMPILER) -c -o $(OUT_DIR)/native_random.o $(FLAGS.NATIVES) $(SRC_DIR)/vm/native/native_random.c
-native.o:
-	$(COMPILER) -c -o $(OUT_DIR)/native.o $(FLAGS.NATIVES) $(SRC_DIR)/vm/native/native.c
 vm_factory.o:
 	$(COMPILER) -c -o $(OUT_DIR)/vm_factory.o $(FLAGS.VM) $(SRC_DIR)/vm/vm_factory.c
-xoshiro256.o:
-	$(COMPILER) -c -o $(OUT_DIR)/xoshiro256.o $(FLAGS.VM) $(SRC_DIR)/vm/xoshiro256.c
-splitmix64.o:
-	$(COMPILER) -c -o $(OUT_DIR)/splitmix64.o $(FLAGS.VM) $(SRC_DIR)/vm/splitmix64.c
 
 dumpper.o:
 	$(COMPILER) -c -o $(OUT_DIR)/dumpper.o $(FLAGS) $(SRC_DIR)/dumpper.c
@@ -70,6 +60,19 @@ parser.o:
 	$(COMPILER) -c -o $(OUT_DIR)/parser.o $(FLAGS) $(SRC_DIR)/parser.c
 lexer.o:
 	$(COMPILER) -c -o $(OUT_DIR)/lexer.o $(FLAGS) $(SRC_DIR)/lexer.c
+
+native_file.o:
+	$(COMPILER) -c -o $(OUT_DIR)/native_file.o $(FLAGS.NATIVES) $(SRC_DIR)/native/native_file.c
+native_nbarray.o:
+	$(COMPILER) -c -o $(OUT_DIR)/native_nbarray.o $(FLAGS.NATIVES) $(SRC_DIR)/native/native_nbarray.c
+native_random.o:
+	$(COMPILER) -c -o $(OUT_DIR)/native_random.o $(FLAGS.NATIVES) $(SRC_DIR)/native/native_random.c
+native.o:
+	$(COMPILER) -c -o $(OUT_DIR)/native.o $(FLAGS.NATIVES) $(SRC_DIR)/native/native.c
+xoshiro256.o:
+	$(COMPILER) -c -o $(OUT_DIR)/xoshiro256.o $(FLAGS.NATIVES) $(SRC_DIR)/native/xoshiro256.c
+splitmix64.o:
+	$(COMPILER) -c -o $(OUT_DIR)/splitmix64.o $(FLAGS.NATIVES) $(SRC_DIR)/native/splitmix64.c
 
 utils.o:
 	$(COMPILER) -c -o $(OUT_DIR)/utils.o $(FLAGS) $(SRC_DIR)/utils.c

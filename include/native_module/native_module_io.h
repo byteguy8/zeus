@@ -3,8 +3,9 @@
 
 #include "utils.h"
 
-#include "vm/native/native_nbarray.h"
-#include "vm/native/native_file.h"
+#include "native/native_nbarray.h"
+#include "native/native_file.h"
+
 #include "vm/types_utils.h"
 #include "vm/vm_factory.h"
 #include "vm/obj.h"

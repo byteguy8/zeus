@@ -16,6 +16,7 @@
 #include "native_module/native_module_random.h"
 #include "native_module/native_module_time.h"
 #include "native_module/native_module_io.h"
+#include "native_module/native_module_nbarray.h"
 
 #include "utils.h"
 #include "types.h"
@@ -1891,6 +1892,24 @@ int import_native(Compiler *compiler, const Token *name_token){
 					io_native_module
 				),
 				"io",
+				PRIVATE_GLOVAL_VALUE_TYPE
+			);
+		}
+
+		return 1;
+	}
+
+    if(strcmp("nbarray", name_token->lexeme) == 0){
+		if(!nbarray_native_module){
+			nbarray_module_init(compiler->rtallocator);
+
+			vm_factory_module_globals_add_obj(
+				current_module(compiler),
+				(Obj *)vm_factory_native_module_obj_create(
+					compiler->rtallocator,
+					nbarray_native_module
+				),
+				"nbarray",
 				PRIVATE_GLOVAL_VALUE_TYPE
 			);
 		}
