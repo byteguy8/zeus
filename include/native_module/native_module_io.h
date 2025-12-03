@@ -170,7 +170,7 @@ Value native_fn_io_open(uint8_t argsc, Value *values, Value target, void *contex
 	file_mode_t mode = parse_mode(str_mode_len, str_mode, VMU_VM);
 	char *pathname = pathname_str->buff;
 
-    if(!UTILS_FILES_CAN_READ(pathname)){
+    if(!utils_files_can_read(pathname)){
 		vmu_error(
 			VMU_VM,
 			"Error opening pathname '%s': does not exist or cannot be read",
@@ -322,7 +322,7 @@ Value native_fn_io_read_text(uint8_t argsc, Value *values, Value target, void *c
     );
     char *pathname = pathname_str_obj->buff;
 
-    if(!UTILS_FILES_CAN_READ(pathname)){
+    if(!utils_files_can_read(pathname)){
 		vmu_error(
 			VMU_VM,
 			"File at '%s' do not exists or cannot be read",

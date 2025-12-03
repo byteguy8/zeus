@@ -32,6 +32,14 @@ int vmu_internal_error(VM *vm, char *msg, ...);
 
 size_t validate_idx(VM *vm, size_t len, int64_t idx);
 
+int64_t validate_value_int_range(
+    Value value,
+    int64_t from,
+    int64_t to,
+    const char *err_msg,
+    VM *vm
+);
+
 uint8_t validate_value_bool_arg(Value value, uint8_t param, const char *name, VM *vm);
 int64_t validate_value_int_arg(Value value, uint8_t param, const char *name, VM *vm);
 double validate_value_float_arg(Value value, uint8_t param, const char *name, VM *vm);

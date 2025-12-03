@@ -17,6 +17,7 @@
 #include "native_module/native_module_time.h"
 #include "native_module/native_module_io.h"
 #include "native_module/native_module_nbarray.h"
+#include "native_module/native_module_raylib.h"
 
 #include "utils.h"
 #include "types.h"
@@ -1917,6 +1918,26 @@ int import_native(Compiler *compiler, const Token *name_token){
 		return 1;
 	}
 
+#ifdef RAYLIB
+    if(strcmp("raylib", name_token->lexeme) == 0){
+		if(!raylib_native_module){
+			raylib_module_init(compiler->rtallocator);
+
+			vm_factory_module_globals_add_obj(
+				current_module(compiler),
+				(Obj *)vm_factory_native_module_obj_create(
+					compiler->rtallocator,
+					raylib_native_module
+				),
+				"raylib",
+				PRIVATE_GLOVAL_VALUE_TYPE
+			);
+		}
+
+		return 1;
+	}
+#endif
+
 	return 0;
 }
 
@@ -1990,7 +2011,7 @@ char *resolve_import_names(
             lzbstr_append_args(lzbstr, "/%s", target_pathname);
         }
 
-        if(UTILS_FILES_EXISTS(lzbstr->buff)){
+        if(utils_files_exists(lzbstr->buff)){
             lzarena_restore(arena_allocator->ctx, arena_state);
 
             source_pathname = lzbstr_rclone_buff((LZBStrAllocator *)arena_allocator, lzbstr, NULL);

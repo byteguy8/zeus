@@ -11,11 +11,11 @@
 #include "essentials/dynarr.h"
 #include <setjmp.h>
 
-#define LOCALS_LENGTH 255
-#define FRAME_LENGTH 255
-#define STACK_LENGTH (LOCALS_LENGTH * FRAME_LENGTH)
-#define MODULES_LENGTH 255
-#define ALLOCATE_START_LIMIT MEMORY_MIBIBYTES(32)
+#define LOCALS_LENGTH              255
+#define FRAME_LENGTH               255
+#define STACK_LENGTH               (LOCALS_LENGTH * FRAME_LENGTH)
+#define MODULES_LENGTH             255
+#define ALLOCATE_START_LIMIT       MEMORY_MIBIBYTES(16)
 #define GROW_ALLOCATE_LIMIT_FACTOR 2
 
 typedef enum vm_result{
@@ -70,8 +70,8 @@ typedef struct vm{
     int modules_stack_len;
     Module *modules_stack;
 //--------------------------  GARBAGE COLLECTOR  ---------------------------//
-    size_t allocated_bytes;
-    size_t allocation_limit_size;
+    size_t mem_use;
+    size_t mem_use_limit;
     ObjList white_objs;
     ObjList gray_objs;
     ObjList black_objs;

@@ -9,6 +9,7 @@
 
 #if _WIN32
     #include <shlwapi.h>
+    #include <windows.h>
 #elif __linux__
     #define _POSIX_C_SOURCE 200809L
 
@@ -20,12 +21,25 @@
 
 //-----------------------------  FILE SYSTEM  ------------------------------//
 #ifdef _WIN32
-    int utils_files_is_directory(LPCSTR pathname){
+    #define ACCESS_MODE_EXISTS 0
+    #define ACCESS_MODE_WRITE_ONLY 2
+    #define ACCESS_MODE_READ_ONLY 4
+    #define ACCESS_MODE_READ_AND_WRITE 6
+
+    inline int utils_files_exists(const char *pathname){
+        return _access(pathname, ACCESS_MODE_EXISTS) == 0;
+    }
+
+    inline int utils_files_can_read(const char *pathname){
+        return access(pathname, ACCESS_MODE_READ_ONLY) == 0;
+    }
+
+    int utils_files_is_directory(const char *pathname){
         DWORD attributes = GetFileAttributesA(pathname);
         return attributes & FILE_ATTRIBUTE_DIRECTORY;
     }
 
-    int utils_files_is_regular(LPCSTR pathname){
+    int utils_files_is_regular(const char *pathname){
 	    DWORD attributes = GetFileAttributesA(pathname);
         return attributes & FILE_ATTRIBUTE_ARCHIVE;
     }
@@ -55,6 +69,14 @@
         return buff;
     }
 #elif __linux__
+    inline int utils_files_exists(const char *pathname){
+        return access(pathname, F_OK) == 0;
+    }
+
+    inline int utils_files_can_read(const char *pathname){
+        return access(pathname, R_OK) == 0;
+    }
+
     int utils_files_is_directory(char *pathname){
         struct stat file = {0};
 

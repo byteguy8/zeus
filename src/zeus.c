@@ -471,7 +471,7 @@ int main(int argc, const char *argv[]){
 		print_help();
 	}
 
-	if(!UTILS_FILES_CAN_READ(source_pathname)){
+	if(!utils_files_can_read(source_pathname)){
 		fprintf(stderr, "File at '%s' do not exists or cannot be read\n", source_pathname);
 		exit(EXIT_FAILURE);
 	}

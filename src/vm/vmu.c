@@ -1119,6 +1119,40 @@ size_t validate_idx(VM *vm, size_t len, int64_t idx){
 	return (size_t)idx;
 }
 
+int64_t validate_value_int_range(Value value, int64_t from, int64_t to, const char *err_msg, VM *vm){
+    if(!IS_VALUE_INT(value)){
+        vmu_error(
+        	vm,
+         	"%s: illegal type. Expect 'int'",
+          	err_msg
+        );
+    }
+
+    int64_t i64_value = VALUE_TO_INT(value);
+
+    if(i64_value < from){
+        vmu_error(
+        	vm,
+         	"%s: illegal value. Expect greater or equals to %" PRId64 ", but got %" PRId64,
+            err_msg,
+            from,
+            i64_value
+        );
+    }
+
+    if(i64_value > to){
+        vmu_error(
+        	vm,
+         	"%s: Illegal value. Expect less or equals to %" PRId64 ", but got %" PRId64,
+          	err_msg,
+            to,
+            i64_value
+        );
+    }
+
+    return i64_value;
+}
+
 inline uint8_t validate_value_bool_arg(Value value, uint8_t param, const char *name, VM *vm){
     if(!IS_VALUE_BOOL(value)){
         vmu_error(
@@ -2207,7 +2241,11 @@ inline Value vmu_record_get_attr(size_t key_size, char *key, RecordObj *record_o
         return *out_value;
     }
 
-    vmu_error(vm, "Failed to get attribute: record does not contain attribute '%s'", key);
+    vmu_error(
+        vm,
+        "Failed to get attribute: record does not contain attribute '%s'",
+        key
+    );
 
     return (Value){0};
 }

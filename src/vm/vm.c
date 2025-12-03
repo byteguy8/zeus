@@ -20,32 +20,57 @@
 #include <assert.h>
 #include <setjmp.h>
 
+static inline uint64_t next_pow2m1(uint64_t x) {
+    x |= x >> 1;
+	x |= x >> 2;
+	x |= x >> 4;
+	x |= x >> 8;
+	x |= x >> 16;
+	x |= x >> 32;
+    return x;
+}
+
+static inline uint64_t next_pow2(uint64_t x) {
+	return next_pow2m1(x-1)+1;
+}
+
+static inline size_t max(size_t a, size_t b){
+    return ((((size_t) 0) - (a >= b)) & a) | ((((size_t) 0) - (a < b)) & b);
+}
+
+static inline size_t min(size_t a, size_t b){
+    return ((((size_t) 0) - (a <= b)) & a) | ((((size_t) 0) - (a > b)) & b);
+}
+
 void *vm_alloc(size_t size, void * ctx){
     VM *vm = (VM *)ctx;
     Allocator *allocator = vm->allocator;
-    void *real_ctx = allocator->ctx;
-    size_t new_allocated_bytes = vm->allocated_bytes + size;
+    size_t mem_use = vm->mem_use;
+    size_t mem_use_limit = vm->mem_use_limit;
+    size_t new_mem_use = mem_use + size;
 
-    if(new_allocated_bytes >= vm->allocation_limit_size){
-        size_t bytes_before = vm->allocated_bytes;
-
+    if(new_mem_use >= mem_use_limit){
         vmu_gc(vm);
 
-        size_t bytes_after = vm->allocated_bytes;
-        size_t freeded_bytes = bytes_after - bytes_before;
+        new_mem_use = vm->mem_use;
+        size_t freeded_mem = mem_use - new_mem_use;
 
-        if(freeded_bytes < size){
-            vm->allocation_limit_size *= 2;
+        if(freeded_mem < size){
+            vm->mem_use_limit = next_pow2(mem_use_limit + size);
         }
     }
 
-    void *ptr = allocator->alloc(size, real_ctx);
+    void *ptr = MEMORY_ALLOC(allocator, char, size);
 
     if(!ptr){
-        vmu_error(vm, "Failed to allocated %zu bytes: out of memory", size);
+        vmu_error(
+            vm,
+            "Failed to allocated %zu bytes: out of memory",
+            size
+        );
     }
 
-    vm->allocated_bytes = new_allocated_bytes;
+    vm->mem_use = new_mem_use;
 
     return ptr;
 }
@@ -53,32 +78,34 @@ void *vm_alloc(size_t size, void * ctx){
 void *vm_realloc(void *ptr, size_t old_size, size_t new_size, void *ctx){
     VM *vm = (VM *)ctx;
     Allocator *allocator = vm->allocator;
-    void *real_ctx = allocator->ctx;
-    ssize_t size = (ssize_t)new_size - (ssize_t)old_size;
-    size_t new_allocated_bytes = vm->allocated_bytes + size;
 
-    if(new_allocated_bytes > vm->allocation_limit_size){
-        size_t bytes_before = vm->allocated_bytes;
+    size_t mem_use = vm->mem_use;
+    size_t mem_use_limit = vm->mem_use_limit;
+    size_t size = max(old_size, new_size) - min(old_size, new_size);
+    size_t new_mem_use = new_size == 0 ? mem_use - size : mem_use + size;
 
+    if(new_mem_use > mem_use_limit){
         vmu_gc(vm);
 
-        size_t bytes_after = vm->allocated_bytes;
-        size_t freeded_bytes = bytes_after - bytes_before;
+        new_mem_use = vm->mem_use;
+        size_t freeded_mem = mem_use - new_mem_use;
 
-        if(freeded_bytes < (size_t)size){
-            vm->allocation_limit_size *= 2;
+        if(freeded_mem < size){
+            vm->mem_use_limit = next_pow2(mem_use_limit + size);
         }
-    }else if(new_allocated_bytes < vm->allocation_limit_size / 2){
-        vm->allocation_limit_size /= 2;
     }
 
-    void *new_ptr = allocator->realloc(ptr, old_size, new_size, real_ctx);
+    void *new_ptr = MEMORY_REALLOC(allocator, char, old_size, new_size, ptr);
 
     if(!new_ptr){
-        vmu_error(vm, "Failed to allocated %zu bytes: out of memory", new_size - old_size);
+        vmu_error(
+            vm,
+            "Failed to allocated %zu bytes: out of memory",
+            new_size - old_size
+        );
     }
 
-    vm->allocated_bytes = new_allocated_bytes;
+    vm->mem_use = new_mem_use;
 
     return new_ptr;
 }
@@ -86,16 +113,16 @@ void *vm_realloc(void *ptr, size_t old_size, size_t new_size, void *ctx){
 void vm_dealloc(void *ptr, size_t size, void *ctx){
     VM *vm = (VM *)ctx;
     Allocator *allocator = vm->allocator;
-    void *real_ctx = allocator->ctx;
-    size_t new_allocated_bytes = vm->allocated_bytes - size;
 
-    if(new_allocated_bytes < vm->allocation_limit_size / 2){
-        vm->allocation_limit_size /= 2;
+    MEMORY_DEALLOC(allocator, char, size, ptr);
+
+    size_t possible_new_mem_limit = vm->mem_use_limit / 2;
+
+    if((vm->mem_use -= size) < (size_t)(possible_new_mem_limit * 0.50) &&
+       possible_new_mem_limit > ALLOCATE_START_LIMIT
+    ){
+        vm->mem_use_limit = possible_new_mem_limit;
     }
-
-    vm->allocated_bytes = new_allocated_bytes;
-
-    allocator->dealloc(ptr, size, real_ctx);
 }
 
 //> PRIVATE INTERFACE
@@ -2194,7 +2221,7 @@ VM *vm_create(Allocator *allocator){
     memset(vm, 0, sizeof(VM));
     vm->runtime_strs = runtime_strs;
     vm->native_symbols = native_symbols;
-    vm->allocation_limit_size = ALLOCATE_START_LIMIT;
+    vm->mem_use_limit = ALLOCATE_START_LIMIT;
     vm->allocator = allocator;
 
     return vm;

@@ -10,7 +10,6 @@
 
 #ifdef _WIN32
     #include <io.h>
-    #include <windows.h>
 #elif __linux__
     #include <unistd.h>
     #include <sys/stat.h>
@@ -37,18 +36,13 @@
 #endif
 //-----------------------------  FILE SYSTEM  ------------------------------//
 #ifdef _WIN32
-    #define ACCESS_MODE_EXISTS 0
-    #define ACCESS_MODE_WRITE_ONLY 2
-    #define ACCESS_MODE_READ_ONLY 4
-    #define ACCESS_MODE_READ_AND_WRITE 6
-
-    #define UTILS_FILES_EXISTS(pathname) (_access(pathname, ACCESS_MODE_EXISTS) == 0)
-    #define UTILS_FILES_CAN_READ(pathname) (access(pathname, ACCESS_MODE_READ_ONLY) == 0)
-    int utils_files_is_directory(LPCSTR pathname);
-    int utils_files_is_regular(LPCSTR pathname);
+    int utils_files_exists(const char *pathname);
+    int utils_files_can_read(const char *pathname);
+    int utils_files_is_directory(const char *pathname);
+    int utils_files_is_regular(const char *pathname);
 #elif __linux__
-    #define UTILS_FILES_EXISTS(pathname) (access(pathname, F_OK) == 0)
-    #define UTILS_FILES_CAN_READ(pathname) (access(pathname, R_OK) == 0)
+    int utils_files_exists(const char *pathname);
+    int utils_files_can_read(const char *pathname);
     int utils_files_is_directory(char *pathname);
     int utils_files_is_regular(char *pathname);
 #endif

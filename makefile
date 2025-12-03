@@ -22,6 +22,7 @@ FLAGS               := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR)
 FLAGS.ESSENTIALS    := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR)/essentials
 FLAGS.SCOPE_MANAGER := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR)/scope_manager -I$(INCLUDE_DIR)
 FLAGS.NATIVES       := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR) -I$(INCLUDE_DIR)/native
+FLAGS.COMPILER      := $(FLAGS)
 FLAGS.VM            := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR)/vm -I$(INCLUDE_DIR)
 
 ESSENTIALS_OBJS     := lzbstr.o dynarr.o lzohtable.o lzarena.o lzpool.o lzflist.o memory.o
@@ -38,7 +39,28 @@ OBJS                := $(ESSENTIALS_OBJS) \
 
 LINKS.COMMON        := -lm
 LINKS.WINDOWS       := -lshlwapi
+LINKS.LINUX         :=
 LINKS               := $(LINKS.COMMON) $(LINKS.$(PLATFORM))
+
+ifdef RAYLIB_INCLUDE
+	ifndef RAYLIB_LIB
+        $(error RAYLIB_LIB must be defined)
+	endif
+
+	FLAGS.COMPILER += -I$(RAYLIB_INCLUDE) -DRAYLIB
+endif
+
+ifdef RAYLIB_LIB
+	ifndef RAYLIB_INCLUDE
+        $(error RAYLIB_INCLUDE must be defined)
+	endif
+
+	ifeq ($(PLATFORM), LINUX)
+		LINKS += -lm -lpthread -ldl -lrt -lX11 $(RAYLIB_LIB)/libraylib.a
+	else
+		LINKS += -L$(RAYLIB_LIB) -lraylib -lopengl32 -lgdi32 -lwinmm -luser32 -lkernel32 -lshell32
+	endif
+endif
 
 zeus: $(OBJS)
 	$(COMPILER) -o $(OUT_DIR)/zeus $(FLAGS) $(OUT_DIR)/*.o $(SRC_DIR)/zeus.c $(LINKS)
@@ -55,7 +77,7 @@ vm_factory.o:
 dumpper.o:
 	$(COMPILER) -c -o $(OUT_DIR)/dumpper.o $(FLAGS) $(SRC_DIR)/dumpper.c
 compiler.o:
-	$(COMPILER) -c -o $(OUT_DIR)/compiler.o $(FLAGS) $(SRC_DIR)/compiler.c
+	$(COMPILER) -c -o $(OUT_DIR)/compiler.o $(FLAGS.COMPILER) $(SRC_DIR)/compiler.c
 parser.o:
 	$(COMPILER) -c -o $(OUT_DIR)/parser.o $(FLAGS) $(SRC_DIR)/parser.c
 lexer.o:
