@@ -1,8 +1,8 @@
 proc filter_values(filter, values){
-    imut new_values = list();
+    let new_values = list();
 
-    for(i = 0 upto values.len()){
-        imut value = values[i];
+    for(let i = 0; i < values.len(); i += 1){
+        let value = values[i];
 
         if(filter(i, value)){
             new_values.insert(value);
@@ -13,12 +13,12 @@ proc filter_values(filter, values){
 }
 
 proc quick_sort(comparator, values){
-    imut len = values.len();
+    let len = values.len();
 
     if(len <= 2){
         if(len == 2){
-            imut a = values[0];
-            imut b = values[1];
+            let a = values[0];
+            let b = values[1];
 
             if(a > b){
                 values[1] = a;
@@ -29,16 +29,16 @@ proc quick_sort(comparator, values){
         ret values;
     }
 
-    imut pivot_idx = 0;
-    imut pivot = values[pivot_idx];
-    imut less = filter_values(anon(idx, value){
+    let pivot_idx = 0;
+    let pivot = values[pivot_idx];
+    let less = filter_values(anon(idx, value){
         if(idx == pivot_idx){
             ret false;
         }
 
         ret comparator(value, pivot) <= 0;
     }, values);
-    imut greater = filter_values(anon(idx, value){
+    let greater = filter_values(anon(idx, value){
         if(idx == pivot_idx){
             ret false;
         }
@@ -49,10 +49,10 @@ proc quick_sort(comparator, values){
     ret quick_sort(comparator, less) .. pivot .. quick_sort(comparator, greater);
 }
 
-imut a_values = list(0,1,2,3,4);
-imut b_values = list(5,6,7,8,9);
-imut c_values = b_values .. a_values;
-imut sorted = quick_sort(anon(a, b){
+let a_values = list(0,1,2,3,4);
+let b_values = list(5,6,7,8,9);
+let c_values = b_values .. a_values;
+let sorted = quick_sort(anon(a, b){
     if(a < b){
         ret -1;
     }elif(a > b){
