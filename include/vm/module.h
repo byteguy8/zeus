@@ -34,6 +34,7 @@ struct module{
 #define MODULE_SYMBOLS(_module)((_module)->context->symbols)
 #define MODULE_GLOBALS(_module)((_module)->context->globals)
 
+#define MODULE_FNS(_module) ((_module)->context->fns)
 #define MODULE_CLOSURES(_module) ((_module)->context->closures)
 
 #endif

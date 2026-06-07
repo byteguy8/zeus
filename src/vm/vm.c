@@ -2229,7 +2229,7 @@ int execute(VM *vm){
             }case OP_FN:{
                 size_t fn_idx = (size_t)read_i32(vm);
                 Module *module = VM_CURRENT_MODULE(vm);
-                DynArr *fns = MODULE_CLOSURES(module);
+                DynArr *fns = MODULE_FNS(module);
                 size_t fns_len = dynarr_len(fns);
 
                 if(fn_idx >= fns_len){
@@ -2240,7 +2240,7 @@ int execute(VM *vm){
                     );
                 }
 
-                Fn *fn = (Fn *)dynarr_get_raw(fns, fn_idx);
+                Fn *fn = DYNARR_GET_PTR_AS(fns, Fn, fn_idx);
                 FnObj *fn_obj = vm_create_fn(vm, fn);
 
                 PUSH_OBJ(vm, fn_obj);
@@ -2260,7 +2260,7 @@ int execute(VM *vm){
                     );
                 }
 
-                Closure *closure = (Closure *)dynarr_get_raw(closures, closure_idx);
+                Closure *closure = DYNARR_GET_PTR_AS(closures, Closure, closure_idx);
                 ClosureObj *closure_obj = init_closure(vm, closure);
 
                 PUSH_OBJ(vm, closure_obj);
