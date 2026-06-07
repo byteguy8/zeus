@@ -5,16 +5,16 @@
 
 #include <stdint.h>
 
-typedef enum symbol_type{
-	LOCAL_SYMBOL_TYPE,
-    GLOBAL_SYMBOL_TYPE,
-    NATIVE_FN_SYMBOL_TYPE,
-	FN_SYMBOL_TYPE,
-	MODULE_SYMBOL_TYPE,
-}SymbolType;
+typedef enum symbol_kind{
+	LOCAL_SYMBOL_KIND,
+    GLOBAL_SYMBOL_KIND,
+    NATIVE_FN_SYMBOL_KIND,
+	FN_SYMBOL_KIND,
+	MODULE_SYMBOL_KIND,
+}SymbolKind;
 
 typedef struct symbol{
-	SymbolType  type;
+	SymbolKind  kind;
 	const Token *identifier;
     const void  *scope;
 }Symbol;
@@ -27,7 +27,7 @@ typedef struct local_symbol{
 }LocalSymbol;
 
 typedef struct global_symbol{
-    Symbol symbol;
+    Symbol  symbol;
     uint8_t is_public;
     uint8_t is_mutable;
 }GlobalSymbol;
@@ -45,7 +45,7 @@ typedef struct fn_symbol{
 }FnSymbol;
 
 typedef struct module_symbol{
-	Symbol symbol;
+	Symbol          symbol;
     const LZOHTable *symbols;
 }ModuleSymbol;
 

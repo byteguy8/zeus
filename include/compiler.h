@@ -33,6 +33,7 @@ typedef struct jmp{
 
 typedef struct mark{
     size_t update_offset;
+    size_t jump_offset;
 	size_t label_name_len;
 	char   *label_name;
 }Mark;
@@ -48,17 +49,15 @@ typedef struct block{
 	struct block *prev;
 }Block;
 
-typedef struct unit{
+typedef struct compilation_unit{
 	int32_t     counter;
 
 	LZOHTable   *labels;
 	DynArr      *jmps;
     DynArr      *marks;
-    Loop        *loops;
     Block       *blocks;
+    Loop        *loops;
     LZOHTable   *captured_symbols;
-
-	Fn          *fn;
 
     LZPool      *labels_pool;
 	LZPool      *jmps_pool;
@@ -66,17 +65,16 @@ typedef struct unit{
     LZPool      *loops_pool;
     LZPool      *blocks_pool;
 
-    void        *arena_state;
-
-	Allocator   *lzarena_allocator;
     Allocator   *lzflist_allocator;
 
-	struct unit *prev;
-}Unit;
+    void        *arena_state;
+    Fn          *fn;
+	struct compilation_unit *prev;
+}CompilationUnit;
 
 typedef struct compiler{
-    jmp_buf         buf;
-	Unit            *units_stack;
+    jmp_buf         err_buf;
+	CompilationUnit *units_stack;
 
     LZOHTable       *keywords;
     DStr            *main_search_pathname;
@@ -85,13 +83,13 @@ typedef struct compiler{
     ScopeManager    *manager;
     Module          *module;
 
+    LZOHTable       *modules;
     LZArena         *compiler_arena;
-    LZPool          *units_pool;
 
+	const Allocator *ctallocator;  // To allocate things only needed at compile time
+	const Allocator *rtallocator;  // to allocate things only needed at runtime
+    const Allocator *pass_allocator;
     Allocator       *arena_allocator;
-	const Allocator *ctallocator;
-	const Allocator *rtallocator;
-    const Allocator *pssallocator;
 }Compiler;
 
 Compiler *compiler_create(const Allocator *ctallocator, const Allocator *rtallocator);
@@ -103,21 +101,25 @@ Module *compiler_compile(
     DStr *main_search_pathname,
     DynArr *search_pathnames,
     LZOHTable *default_natives,
+    DynArr *proc_prototypes,
     ScopeManager *manager,
+    LZOHTable *modules,
     DynArr *stmts,
     const char *pathname
 );
 
 Module *compiler_import(
     Compiler *compiler,
-    LZArena *compiler_arena,
-    Allocator *arena_allocator,
-    const Allocator *pssallocator,
     LZOHTable *keywords,
     DStr *main_search_pathname,
     DynArr *search_pathnames,
     LZOHTable *default_natives,
+    DynArr *proc_prototypes,
     ScopeManager *manager,
+    LZOHTable *modules,
+    LZArena *compiler_arena,
+    const Allocator *pass_allocator,
+    Allocator *arena_allocator,
     DynArr *stmts,
     const char *pathname,
     const char *name

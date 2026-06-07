@@ -74,8 +74,6 @@ Allocator *memory_arena_allocator(const Allocator *allocator, LZArena **out_lzar
         arena_allocator
     )
 
-    arena_allocator->extra = allocator;
-
     if(out_lzarena){
         *out_lzarena = arena;
     }
@@ -83,17 +81,7 @@ Allocator *memory_arena_allocator(const Allocator *allocator, LZArena **out_lzar
     return arena_allocator;
 }
 
-void memory_destroy_arena_allocator(Allocator *allocator){
-    if(!allocator){
-        return;
-    }
-
-    Allocator *source_allocator = (Allocator *)allocator->extra;
-    LZArena *arena = (LZArena *)allocator->ctx;
-
-    lzarena_destroy(arena);
-    MEMORY_DEALLOC(source_allocator, Allocator, 1, allocator);
-}
+void memory_destroy_arena_allocator(Allocator *allocator){}
 
 Allocator *memory_lzflist_allocator(Allocator *allocator, LZFList **out_lzflist){
     LZFList *lzflist = lzflist_create((LZFListAllocator *)allocator);
@@ -114,8 +102,6 @@ Allocator *memory_lzflist_allocator(Allocator *allocator, LZFList **out_lzflist)
         lzflist_allocator
     )
 
-    lzflist_allocator->extra = allocator;
-
     if(out_lzflist){
         *out_lzflist = lzflist;
     }
@@ -123,6 +109,4 @@ Allocator *memory_lzflist_allocator(Allocator *allocator, LZFList **out_lzflist)
     return lzflist_allocator;
 }
 
-void memory_destroy_flist_allocator(Allocator *allocator){
-
-}
+void memory_destroy_flist_allocator(Allocator *allocator){}

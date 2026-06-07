@@ -99,7 +99,7 @@ static void dealloc_backend(void *ptr, size_t size);
 static size_t round_size(size_t to, size_t size);
 static uintptr_t align_addr(size_t alignment, uintptr_t addr);
 //--------------------------------  REGION  --------------------------------//
-static LZFLRegion *create_region(size_t size);
+static LZFLRegion *create_region(size_t size, const LZFListAllocator *allocator);
 static void destroy_region(LZFLRegion *region);
 static int insert_region(LZFLRegion *region, LZFLRegionList *list);
 static void remove_region(LZFLRegion *region, LZFLRegionList *list);
@@ -205,14 +205,14 @@ inline uintptr_t align_addr(size_t alignment, uintptr_t addr){
     return padding + addr;
 }
 
-LZFLRegion *create_region(size_t requested_size){
+LZFLRegion *create_region(size_t requested_size, const LZFListAllocator *allocator){
     size_t region_size = GET_REGION_STRUCT_SIZE();
 
     requested_size += region_size + GET_HEADER_STRUCT_SIZE();
 
     size_t page_size = (size_t)PAGE_SIZE;
     size_t needed_size = page_size * (requested_size / page_size + 1);
-    char *raw_buff = (char *)alloc_backend(needed_size);
+    char *raw_buff = (char *)(allocator ? allocator->alloc(needed_size, allocator->ctx) : alloc_backend(needed_size));
 
     if (!raw_buff){
         return NULL;
@@ -430,7 +430,7 @@ inline void replace_current_region(LZFLRegion *region, LZFList *list){
 }
 
 int create_and_insert_region(size_t size, LZFList *list){
-    LZFLRegion *region = create_region(size);
+    LZFLRegion *region = create_region(size, list->allocator);
 
     if(region){
         insert_region(region, &list->regions);
@@ -487,7 +487,9 @@ LZFList *lzflist_create(LZFListAllocator *allocator){
         return NULL;
     }
 
-    memset(list, 0, LIST_SIZE);
+    *list = (LZFList){
+        .allocator = allocator
+    };
 
     return list;
 }
@@ -516,7 +518,7 @@ inline size_t lzflist_ptr_size(const void *ptr){
 int lzflist_prealloc(LZFList *list, size_t size){
     assert(size % PAGE_SIZE == 0 && "'size' must be divisible by 'page size'");
 
-    LZFLRegion *region = create_region(size);
+    LZFLRegion *region = create_region(size, list->allocator);
 
     if(region){
         insert_region(region, &list->regions);

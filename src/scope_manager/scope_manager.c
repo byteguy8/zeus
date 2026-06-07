@@ -16,7 +16,7 @@ static void internal_error_nctx(ScopeManager *manager, const char *fmt, ...);
 static Symbol *exists(Scope *scope, const Token *identifier);
 static Symbol *exists_local(Scope *scope, const Token *identifier);
 
-static int init_scope(ScopeManager *manager, Scope *scope, ScopeType type);
+static int init_scope(ScopeManager *manager, Scope *scope, ScopeKind type);
 static local_t create_locals_counter(ScopeManager *manager);
 static local_t generate_local_offset(ScopeManager *manager, Scope *scope, const Token *ref_token);
 static Scope *create_global_scope(const Allocator *allocator);
@@ -31,7 +31,7 @@ void error(ScopeManager *manager, const Token *token, const char *fmt, ...){
 
 	va_end(args);
 
-	longjmp(*manager->buf, 1);
+	longjmp(*manager->err_buf, 1);
 }
 
 void internal_error(ScopeManager *manager, const Token *token, const char *fmt, ...){
@@ -44,7 +44,7 @@ void internal_error(ScopeManager *manager, const Token *token, const char *fmt, 
 
 	va_end(args);
 
-	longjmp(*manager->buf, 1);
+	longjmp(*manager->err_buf, 1);
 }
 
 void internal_error_nctx(ScopeManager *manager, const char *fmt, ...){
@@ -57,7 +57,7 @@ void internal_error_nctx(ScopeManager *manager, const char *fmt, ...){
 
 	va_end(args);
 
-	longjmp(*manager->buf, 1);
+	longjmp(*manager->err_buf, 1);
 }
 
 inline Symbol *exists(Scope *scope, const Token *identifier){
@@ -97,13 +97,11 @@ inline Symbol *exists_local(Scope *scope, const Token *identifier){
 }
 
 
-inline int init_scope(ScopeManager *manager, Scope *scope, ScopeType type){
-	void *arena_state = lzarena_save(manager->manager_arena);
-    LZOHTable *symbols = MEMORY_LZOHTABLE_LEN(manager->manager_arena_allocator, 256);
+inline int init_scope(ScopeManager *manager, Scope *scope, ScopeKind type){
+    LZOHTable *symbols = MEMORY_LZOHTABLE_LEN(manager->allocator, 256);
 
     scope->type = type;
 	scope->symbols = symbols;
-    scope->arena_state = arena_state;
     scope->prev = NULL;
 
     return 0;
@@ -138,9 +136,8 @@ Scope *create_global_scope(const Allocator *allocator){
     MEMORY_CHECK(global_scope);
 
     *global_scope = (Scope){
-        .type = GLOBAL_SCOPE_TYPE,
-        .symbols = global_symbols,
-        .arena_state = NULL
+        .type = GLOBAL_SCOPE_KIND,
+        .symbols = global_symbols
     };
 
     goto OK;
@@ -157,37 +154,15 @@ OK:
 
 ScopeManager *scope_manager_create(const Allocator *allocator){
     Scope *global_scope = create_global_scope(allocator);
-
-	LZPool *global_symbols_pool = MEMORY_LZPOOL(allocator, GlobalSymbol);
-    LZPool *native_fn_symbols_pool = MEMORY_LZPOOL(allocator, NativeFnSymbol);
-    LZPool *fn_symbols_pool = MEMORY_LZPOOL(allocator, FnSymbol);
-	LZPool *module_symbols_pool = MEMORY_LZPOOL(allocator, ModuleSymbol);
-	LZPool *scopes_pool = MEMORY_LZPOOL(allocator, Scope);
-    Allocator *manager_arena_allocator = memory_arena_allocator(allocator, NULL);
     ScopeManager *manager = MEMORY_ALLOC(allocator, ScopeManager, 1);
 
     MEMORY_CHECK(global_scope);
-    MEMORY_CHECK(global_symbols_pool);
-    MEMORY_CHECK(native_fn_symbols_pool);
-    MEMORY_CHECK(fn_symbols_pool);
-    MEMORY_CHECK(module_symbols_pool);
-    MEMORY_CHECK(scopes_pool);
-    MEMORY_CHECK(manager_arena_allocator);
     MEMORY_CHECK(manager);
 
     *manager = (ScopeManager){
         .depth = 0,
-        .scope_stack = NULL,
-        .fn_scope_stack = NULL,
+        .scope_stack = global_scope,
         .global_scope = global_scope,
-        .local_symbols_pool = NULL,
-        .global_symbols_pool = global_symbols_pool,
-        .native_fn_symbols_pool = native_fn_symbols_pool,
-        .fn_symbols_pool = fn_symbols_pool,
-        .module_symbols_pool = module_symbols_pool,
-        .scopes_pool = scopes_pool,
-        .manager_arena = manager_arena_allocator->ctx,
-        .manager_arena_allocator = manager_arena_allocator,
         .allocator = allocator
     };
 
@@ -195,12 +170,6 @@ ScopeManager *scope_manager_create(const Allocator *allocator){
 
 ERROR:
     MEMORY_DEALLOC(allocator, Scope, 1, global_scope);
-    lzpool_dealloc(global_symbols_pool);
-    lzpool_dealloc(native_fn_symbols_pool);
-    lzpool_dealloc(fn_symbols_pool);
-    lzpool_dealloc(module_symbols_pool);
-    lzpool_dealloc(scopes_pool);
-    memory_destroy_arena_allocator(manager_arena_allocator);
     MEMORY_DEALLOC(allocator, ScopeManager, 1, manager);
 
     return NULL;
@@ -217,21 +186,37 @@ void scope_manager_destroy(ScopeManager *manager){
     const Allocator *allocator = manager->allocator;
 
     MEMORY_DEALLOC(allocator, Scope, 1, manager->global_scope);
-    lzpool_dealloc(manager->global_symbols_pool);
-    lzpool_dealloc(manager->fn_symbols_pool);
-    lzpool_dealloc(manager->module_symbols_pool);
-    lzpool_dealloc(manager->scopes_pool);
-    memory_destroy_arena_allocator(manager->manager_arena_allocator);
     MEMORY_DEALLOC(allocator, ScopeManager, 1, manager);
 }
 
-inline Scope *scope_manager_peek(const ScopeManager *manager){
-	Scope *top = manager->scope_stack;
-	return top ? top : manager->global_scope;
+inline DynArr *scope_manager_push_scopes(ScopeManager *manager){
+    DynArr *old_scopes = manager->current_scopes;
+    DynArr *new_scopes = MEMORY_DYNARR_PTR(manager->allocator);
+
+    manager->current_scopes = new_scopes;
+
+    return old_scopes;
 }
 
-Scope *scope_manager_push(ScopeManager *manager, ScopeType type){
-    assert(type != GLOBAL_SCOPE_TYPE);
+inline DynArr *scope_manager_pop_scopes(ScopeManager *manager, DynArr *old_scopes){
+    assert(manager->current_scopes);
+
+    DynArr *new_scopes = manager->current_scopes;
+
+    manager->current_scopes = old_scopes;
+
+    return new_scopes;
+}
+
+inline Scope *scope_manager_peek(const ScopeManager *manager){
+    assert(manager->global_scope);
+    assert(manager->scope_stack);
+
+    return manager->scope_stack;
+}
+
+Scope *scope_manager_push(ScopeManager *manager, ScopeKind type){
+    assert(type != GLOBAL_SCOPE_KIND);
 
     if(manager->depth == DEPTH_T_MAX){
         internal_error_nctx(
@@ -241,31 +226,18 @@ Scope *scope_manager_push(ScopeManager *manager, ScopeType type){
         );
     }
 
-    Scope *current_scope = scope_manager_peek(manager);
-
-    if(current_scope->type == GLOBAL_SCOPE_TYPE){
-        current_scope->arena_state = lzarena_save(manager->manager_arena);
-
-        manager->local_symbols_pool = MEMORY_LZPOOL(
-            manager->manager_arena_allocator,
-            LocalSymbol
-        );
-
-        lzpool_prealloc(1024, manager->local_symbols_pool);
-    }
-
-    Scope *scope = lzpool_alloc_x(1024, manager->scopes_pool);
+    Scope *new_scope = MEMORY_ALLOC(manager->allocator, Scope, 1);
 
     switch (type){
-        case BLOCK_SCOPE_TYPE:
-        case IF_SCOPE_TYPE:
-        case ELIF_SCOPE_TYPE:
-        case ELSE_SCOPE_TYPE:
-        case WHILE_SCOPE_TYPE:
-        case FOR_SCOPE_TYPE:
-        case TRY_SCOPE_TYPE:
-        case CATCH_SCOPE_TYPE:{
-            scope->content.local_scope = (LocalScope){
+        case BLOCK_SCOPE_KIND:
+        case IF_SCOPE_KIND:
+        case ELIF_SCOPE_KIND:
+        case ELSE_SCOPE_KIND:
+        case WHILE_SCOPE_KIND:
+        case FOR_SCOPE_KIND:
+        case TRY_SCOPE_KIND:
+        case CATCH_SCOPE_KIND:{
+            new_scope->content.local_scope = (LocalScope){
             	.depth = manager->depth,
                 .locals = create_locals_counter(manager),
                 .returned = 0,
@@ -273,17 +245,16 @@ Scope *scope_manager_push(ScopeManager *manager, ScopeType type){
             };
 
             break;
-        }case FN_SCOPE_TYPE:{
-            scope->content.fn_scope = (FnScope){
+        }case FN_SCOPE_KIND:{
+            new_scope->content.fn_scope = (FnScope){
             	.depth = manager->depth += 1,
-                .locals = create_locals_counter(manager),
+                .locals = 0,
                 .returned = 0,
                 .prev_fn = manager->fn_scope_stack
             };
 
-            AS_FN_SCOPE(scope)->prev_fn = manager->fn_scope_stack;
-            manager->fn_scope_stack = scope;
-        }case GLOBAL_SCOPE_TYPE:{
+            manager->fn_scope_stack = new_scope;
+        }case GLOBAL_SCOPE_KIND:{
             break;
         }default:{
             assert(0 && "Illegal scope type");
@@ -291,51 +262,48 @@ Scope *scope_manager_push(ScopeManager *manager, ScopeType type){
         }
     }
 
-    init_scope(manager, scope, type);
+    init_scope(manager, new_scope, type);
 
-    scope->prev = scope_manager_peek(manager);
-    manager->scope_stack = scope;
+    new_scope->prev = scope_manager_peek(manager);
+    manager->scope_stack = new_scope;
 
-	return scope;
+    if(manager->current_scopes){
+        dynarr_insert_ptr(manager->current_scopes, new_scope);
+    }
+
+	return new_scope;
 }
 
 void scope_manager_pop(ScopeManager *manager){
 	assert(manager->scope_stack);
 
-	Scope *scope = manager->scope_stack;
+	Scope *current_scope = manager->scope_stack;
 
-    manager->scope_stack = IS_GLOBAL_SCOPE(scope->prev) ? NULL : scope->prev;
+    manager->scope_stack = current_scope->prev;
 
-    if(IS_FN_SCOPE(scope)){
-        assert(manager->depth > 0 && "depth must be greater than 0");
+    if(IS_FN_SCOPE(current_scope)){
+        assert(manager->depth > 0);
 
         manager->depth--;
-        manager->fn_scope_stack = AS_FN_SCOPE(scope)->prev_fn;
+        manager->fn_scope_stack = AS_FN_SCOPE(current_scope)->prev_fn;
     }
 
-    lzarena_restore(manager->manager_arena, scope->arena_state);
-
-    Scope *current_scope = scope_manager_peek(manager);
-
-    if(IS_GLOBAL_SCOPE(current_scope)){
-        assert(manager->fn_scope_stack == NULL && "procedure scopes must be empty");
-
-        lzarena_restore(manager->manager_arena, current_scope->arena_state);
-        manager->local_symbols_pool = NULL;
+    if(manager->current_scopes){
+        dynarr_insert_ptr(manager->current_scopes, current_scope);
     }
-
-    lzpool_dealloc(scope);
 }
 
 inline int scope_manager_is_global_scope(const ScopeManager *manager){
-    return manager->scope_stack == NULL;
+    assert(manager->scope_stack);
+
+    return IS_GLOBAL_SCOPE(manager->scope_stack);
 }
 
-inline int scope_manager_is_scope_type(const ScopeManager *manager, ScopeType type){
+int scope_manager_is_scope_type(const ScopeManager *manager, ScopeKind type){
     Scope *current = scope_manager_peek(manager);
 
     do{
-    	if(current->type == FN_SCOPE_TYPE){
+    	if(current->type == FN_SCOPE_KIND){
    			return 0;
      	}
 
@@ -363,6 +331,20 @@ inline int scope_manager_exists_procedure_name(
         symbols,
         NULL
     );
+}
+
+Scope *scope_manager_is_loop(const ScopeManager *manager){
+    Scope *current = scope_manager_peek(manager);
+
+    do{
+        if(current->type == WHILE_SCOPE_KIND || current->type == FOR_SCOPE_KIND){
+            return current;
+        }
+
+        current = current->prev;
+    }while(current->type != GLOBAL_SCOPE_KIND);
+
+    return NULL;
 }
 
 inline size_t scope_manager_locals_count(const ScopeManager *manager){
@@ -406,13 +388,14 @@ LocalSymbol *scope_manager_define_local(
 		);
 	}
 
-	LocalSymbol *local_symbol = lzpool_alloc_x(1024, manager->local_symbols_pool);
+	LocalSymbol *local_symbol = MEMORY_ALLOC(manager->allocator, LocalSymbol, 1);
 	Symbol *symbol = &local_symbol->symbol;
 
-	symbol->type = LOCAL_SYMBOL_TYPE;
+	symbol->kind = LOCAL_SYMBOL_KIND;
 	symbol->identifier = identifier_token;
     symbol->scope = scope;
-	local_symbol->offset = generate_local_offset(manager, scope, identifier_token);
+
+    local_symbol->offset = generate_local_offset(manager, scope, identifier_token);
 	local_symbol->is_mutable = is_mutable;
 	local_symbol->is_initialized = is_initialized;
 
@@ -434,7 +417,7 @@ GlobalSymbol *scope_manager_define_global(
 ){
     Scope *scope = scope_manager_peek(manager);
 
-    assert(scope->type == GLOBAL_SCOPE_TYPE && "Scope must be global");
+    assert(scope->type == GLOBAL_SCOPE_KIND && "Scope must be global");
 
 	if(exists_local(scope, identifier_token)){
 		error(
@@ -445,13 +428,14 @@ GlobalSymbol *scope_manager_define_global(
 		);
 	}
 
-	GlobalSymbol *global_symbol = lzpool_alloc_x(1024, manager->global_symbols_pool);
+	GlobalSymbol *global_symbol = MEMORY_ALLOC(manager->allocator, GlobalSymbol, 1);
 	Symbol *symbol = &global_symbol->symbol;
 
-	symbol->type = GLOBAL_SYMBOL_TYPE;
+	symbol->kind = GLOBAL_SYMBOL_KIND;
 	symbol->identifier = identifier_token;
     symbol->scope = scope;
-	global_symbol->is_mutable = is_mutable;
+
+    global_symbol->is_mutable = is_mutable;
 
     lzohtable_put_ck(
         identifier_token->lexeme_len,
@@ -470,13 +454,14 @@ NativeFnSymbol *scope_manager_define_native_fn(
     const char *name
 ){
     Scope *scope = scope_manager_peek(manager);
-	NativeFnSymbol *native_fn_symbol = lzpool_alloc_x(64, manager->native_fn_symbols_pool);
+	NativeFnSymbol *native_fn_symbol = MEMORY_ALLOC(manager->allocator, NativeFnSymbol, 1);
 	Symbol *symbol = &native_fn_symbol->symbol;
 
-	symbol->type = NATIVE_FN_SYMBOL_TYPE;
+	symbol->kind = NATIVE_FN_SYMBOL_KIND;
 	symbol->identifier = NULL;
     symbol->scope = scope;
-	native_fn_symbol->params_count = arity;
+
+    native_fn_symbol->params_count = arity;
     native_fn_symbol->name = name;
 
     lzohtable_put_ck(
@@ -506,10 +491,10 @@ FnSymbol *scope_manager_define_fn(
 		);
 	}
 
-	FnSymbol *fn_symbol = lzpool_alloc_x(1024, manager->fn_symbols_pool);
+	FnSymbol *fn_symbol = MEMORY_ALLOC(manager->allocator, FnSymbol, 1);
 	Symbol *symbol = &fn_symbol->symbol;
 
-	symbol->type = FN_SYMBOL_TYPE;
+	symbol->kind = FN_SYMBOL_KIND;
 	symbol->identifier = identifier_token;
     symbol->scope = scope;
 	fn_symbol->params_count = arity;
@@ -540,10 +525,10 @@ ModuleSymbol *scope_manager_define_module(
 		);
 	}
 
-	ModuleSymbol *module_symbol = lzpool_alloc_x(1024, manager->module_symbols_pool);
+	ModuleSymbol *module_symbol = MEMORY_ALLOC(manager->allocator, ModuleSymbol, 1);
 	Symbol *symbol = &module_symbol->symbol;
 
-	symbol->type = MODULE_SYMBOL_TYPE;
+	symbol->kind = MODULE_SYMBOL_KIND;
 	symbol->identifier = identifier_token;
     symbol->scope = scope;
 

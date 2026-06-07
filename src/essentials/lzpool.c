@@ -1,47 +1,124 @@
 #include "lzpool.h"
 #include <stdlib.h>
 #include <assert.h>
+#include <inttypes.h>
+
+#define HEADER_SIZE (sizeof(LZPoolHeader))
+#define MAGIC_NUMBER 0xDEADBEEF
+
+typedef struct lzsubpool        LZSubPool;
+typedef struct lzpool_header    LZPoolHeader;
+typedef struct lzpool_slot_list LZPoolSlotList;
+typedef struct lzsubpool_list   LZSubPoolList;
+
+typedef uint8_t boolean;
+
+struct lzsubpool{
+    size_t    used;
+    size_t    capacity;
+
+    void      *slots;
+
+    LZPool    *pool;
+
+    LZSubPool *prev;
+    LZSubPool *next;
+};
+
+struct lzpool_header{
+    size_t       magic;
+    boolean      used;
+
+    LZSubPool    *subpool;
+
+    LZPoolHeader *prev;
+    LZPoolHeader *next;
+};
+
+struct lzpool_slot_list{
+    size_t       len;
+    LZPoolHeader *head;
+    LZPoolHeader *tail;
+};
+
+struct lzsubpool_list{
+    size_t    len;
+    LZSubPool *head;
+    LZSubPool *tail;
+};
+
+struct lzpool{
+    size_t                header_size;
+    size_t                slot_size;
+
+    size_t                available;
+    size_t                capacity;
+
+    LZPoolSlotList        slots;
+    LZSubPoolList         subpools;
+
+    const LZPoolAllocator *allocator;
+};
 
 //--------------------------------------------------------------------------//
 //                            PRIVATE INTERFACE                             //
 //--------------------------------------------------------------------------//
-#define HEADER_SIZE (sizeof(LZPoolHeader))
-#define MAGIC_NUMBER 0xDEADBEEF
-//--------------------------------  MEMORY  --------------------------------//
-static inline void *lzalloc(size_t size, LZPoolAllocator *allocator);
-static inline void *lzrealloc(void *ptr, size_t old_size, size_t new_size, LZPoolAllocator *allocator);
-static inline void lzdealloc(void *ptr, size_t size, LZPoolAllocator *allocator);
-
-#define MEMORY_ALLOC(_type, _count, _allocator)((_type *)lzalloc(sizeof(_type) * (_count), (_allocator)))
-#define MEMORY_REALLOC(_ptr, _type, _old_count, _new_count, _allocator)((_type *)(lzrealloc((_ptr), sizeof(_type) * (_old_count), sizeof(_type) * (_new_count), (_allocator))))
-#define MEMORY_DEALLOC(_ptr, _type, _count, _allocator)(lzdealloc((_ptr), sizeof(_type) * (_count), (_allocator)))
-
-static inline void destroy_subpool(size_t header_size, size_t slot_size, LZSubPool *subpool, LZPoolAllocator *allocator);
-
 static inline size_t round_size(size_t to, size_t size);
+//--------------------------------  MEMORY  --------------------------------//
+static inline void *lzalloc(const LZPoolAllocator *allocator, size_t size);
+static inline void *lzrealloc(const LZPoolAllocator *allocator, void *ptr, size_t old_size, size_t new_size);
+static inline void lzdealloc(const LZPoolAllocator *allocator, void *ptr, size_t size);
+
+#define MEMORY_ALLOC(_allocator, _type, _count) \
+    ((_type *)lzalloc((_allocator), sizeof(_type) * (_count)))
+
+#define MEMORY_REALLOC(_allocator, _ptr, _type, _old_count, _new_count) \
+    ((_type *)(lzrealloc((_allocator), (_ptr), sizeof(_type) * (_old_count), sizeof(_type) * (_new_count))))
+
+#define MEMORY_DEALLOC(_allocator, _ptr, _type, _count) \
+    (lzdealloc((_allocator), (_ptr), sizeof(_type) * (_count)))
+
+static void destroy_subpool(LZSubPool *subpool, const LZPoolAllocator *allocator, size_t header_size, size_t slot_size);
 
 static inline void *slot_chunk(size_t header_size, LZPoolHeader *slot);
-static inline LZPoolHeader *slot_from_ptr(size_t header_size, void *ptr);
-static inline LZPoolHeader *get_slot_at(size_t idx, size_t header_size, size_t slot_size, void *slots);
+static inline LZPoolHeader *slot_from_ptr(const void *ptr, size_t header_size);
+static inline LZPoolHeader *get_slot_at(const void *slots, size_t header_size, size_t slot_size, size_t idx);
 
-static void insert_slot(LZPoolHeader *header, LZPoolHeaderList *list);
-static void remove_slot(LZPoolHeader *header, LZPoolHeaderList *list);
+static void insert_slot(LZPoolSlotList *list, LZPoolHeader *slot);
+static void remove_slot(LZPoolSlotList *list, LZPoolHeader *slot);
 
-static void init_subpool_slots(size_t header_size, size_t slot_size, LZSubPool *subpool, LZPoolHeaderList *list, LZPool *pool);
-static void insert_subpool(LZSubPool *subpool, LZSubPoolList *list);
-static void remove_subpool(LZSubPool *subpool, LZSubPoolList *list);
+static void insert_subpool(LZSubPoolList *list, LZSubPool *subpool);
+static void remove_subpool(LZSubPoolList *list, LZSubPool *subpool);
+
+static void init_subpool_slots(
+    LZSubPool *subpool,
+    LZPoolSlotList *slots,
+    size_t header_size,
+    size_t slot_size
+);
+
+static void init_pool(LZPool *pool, const LZPoolAllocator *allocator, size_t slot_size);
+static void deinit_pool(LZPool *pool);
+
 //--------------------------------------------------------------------------//
 //                          PRIVATE IMPLEMENTATION                          //
 //--------------------------------------------------------------------------//
-static inline void *lzalloc(size_t size, LZPoolAllocator *allocator){
+inline size_t round_size(size_t to, size_t size){
+    size_t mod = size % to;
+    size_t padding = mod == 0 ? 0 : to - mod;
+
+    return padding + size;
+}
+
+inline void *lzalloc(const LZPoolAllocator *allocator, size_t size){
     return allocator ? allocator->alloc(size, allocator->ctx) : malloc(size);
 }
 
-static inline void *lzrealloc(void *ptr, size_t old_size, size_t new_size, LZPoolAllocator *allocator){
+inline void *lzrealloc(const LZPoolAllocator *allocator, void *ptr, size_t old_size, size_t new_size){
     return allocator ? allocator->realloc(ptr, old_size, new_size, allocator->ctx) : realloc(ptr, new_size);
 }
 
-static inline void lzdealloc(void *ptr, size_t size, LZPoolAllocator *allocator){
+inline void lzdealloc(const LZPoolAllocator *allocator, void *ptr, size_t size){
     if(allocator){
         allocator->dealloc(ptr, size, allocator->ctx);
     }else{
@@ -49,111 +126,58 @@ static inline void lzdealloc(void *ptr, size_t size, LZPoolAllocator *allocator)
     }
 }
 
-static inline void destroy_subpool(size_t header_size, size_t slot_size, LZSubPool *subpool, LZPoolAllocator *allocator){
-    MEMORY_DEALLOC(subpool->slots, char, (header_size + slot_size) * subpool->slots_count, allocator);
-    MEMORY_DEALLOC(subpool, LZSubPool, 1, allocator);
+inline void destroy_subpool(LZSubPool *subpool, const LZPoolAllocator *allocator, size_t header_size, size_t slot_size){
+    MEMORY_DEALLOC(allocator, subpool->slots, char, (header_size + slot_size) * subpool->capacity);
+    MEMORY_DEALLOC(allocator, subpool, LZSubPool, 1);
 }
 
-static inline size_t round_size(size_t to, size_t size){
-    size_t mod = size % to;
-    size_t padding = mod == 0 ? 0 : to - mod;
-    return padding + size;
-}
-
-static inline void *slot_chunk(size_t header_size, LZPoolHeader *slot){
+inline void *slot_chunk(size_t header_size, LZPoolHeader *slot){
     return ((char *)slot) + header_size;
 }
 
-static inline LZPoolHeader *slot_from_ptr(size_t header_size, void *ptr){
+inline LZPoolHeader *slot_from_ptr(const void *ptr, size_t header_size){
     LZPoolHeader *header = (LZPoolHeader *)(((char *)ptr) - header_size);
     assert(header->magic == MAGIC_NUMBER && "Corrupted memory dectected");
     return header;
 }
 
-static inline LZPoolHeader *get_slot_at(size_t idx, size_t header_size, size_t slot_size, void *slots){
+inline LZPoolHeader *get_slot_at(const void *slots, size_t header_size, size_t slot_size, size_t idx){
     return (LZPoolHeader *)(((char *)slots) + ((header_size + slot_size) * idx));
 }
 
-static void insert_slot(LZPoolHeader *header, LZPoolHeaderList *list){
+inline void insert_slot(LZPoolSlotList *list, LZPoolHeader *slot){
     if(list->tail){
-        list->tail->next = header;
-        header->prev = list->tail;
+        list->tail->next = slot;
+        slot->prev = list->tail;
     }else{
-        list->head = header;
+        list->head = slot;
     }
 
     list->len++;
-    list->tail = header;
+    list->tail = slot;
 }
 
-static void remove_slot(LZPoolHeader *header, LZPoolHeaderList *list){
-    if(header == list->head){
-        list->head = header->next;
+inline void remove_slot(LZPoolSlotList *list, LZPoolHeader *slot){
+    if(slot == list->head){
+        list->head = slot->next;
     }
 
-    if(header == list->tail){
-        list->tail = header->prev;
+    if(slot == list->tail){
+        list->tail = slot->prev;
+    }
+
+    if(slot->prev){
+        slot->prev->next = slot->next;
+    }
+
+    if(slot->next){
+        slot->next->prev = slot->prev;
     }
 
     list->len--;
-
-    if(header->prev){
-        header->prev->next = header->next;
-    }
-
-    if(header->next){
-        header->next->prev = header->prev;
-    }
 }
 
-static void init_subpool_slots(size_t header_size, size_t slot_size, LZSubPool *subpool, LZPoolHeaderList *list, LZPool *pool){
-    size_t slots_count = subpool->slots_count;
-    char *offset = subpool->slots;
-    LZPoolHeader *prev = NULL;
-
-    for (size_t i = 0; i < slots_count; i++){
-        char *next_offset = i + 1 < slots_count ? offset + (header_size + slot_size) : NULL;
-        LZPoolHeader *current = (LZPoolHeader *)offset;
-        LZPoolHeader *next = (LZPoolHeader *)next_offset;
-
-        current->magic = MAGIC_NUMBER;
-        current->used = 0;
-        current->pool = pool;
-        current->subpool = subpool;
-        current->prev = prev;
-        current->next = NULL;
-
-        if(next){
-            current->next = next;
-
-            next->magic = MAGIC_NUMBER;
-            next->used = 0;
-            next->pool = pool;
-            next->subpool = subpool;
-            next->prev = current;
-            next->next = NULL;
-        }
-
-        offset = next_offset;
-        prev = current;
-    }
-
-    offset = (char *)subpool->slots;
-    LZPoolHeader *first = (LZPoolHeader *)offset;
-    LZPoolHeader *last = get_slot_at(slots_count - 1, header_size, slot_size, offset);
-
-    if(list->tail){
-        list->tail->next = first;
-        first->prev = list->tail;
-    }else{
-        list->head = first;
-        list->tail = last;
-    }
-
-    list->len += slots_count;
-}
-
-static void insert_subpool(LZSubPool *subpool, LZSubPoolList *list){
+void insert_subpool(LZSubPoolList *list, LZSubPool *subpool){
     if(list->tail){
         list->tail->next = subpool;
         subpool->prev = list->tail;
@@ -165,7 +189,7 @@ static void insert_subpool(LZSubPool *subpool, LZSubPoolList *list){
     list->tail = subpool;
 }
 
-static void remove_subpool(LZSubPool *subpool, LZSubPoolList *list){
+void remove_subpool(LZSubPoolList *list, LZSubPool *subpool){
     if(subpool == list->head){
         list->head = subpool->next;
     }
@@ -174,59 +198,91 @@ static void remove_subpool(LZSubPool *subpool, LZSubPoolList *list){
         list->tail = subpool->prev;
     }
 
-    list->len--;
-
     if(subpool->prev){
         subpool->prev->next = subpool->next;
     }
 
     if(subpool->next){
-        subpool->next = subpool->prev;
+        subpool->next->prev = subpool->prev;
     }
-}
-//--------------------------------------------------------------------------//
-//                          PUBLIC IMPLEMENTATION                           //
-//--------------------------------------------------------------------------//
-inline void lzpool_init(size_t slot_size, LZPoolAllocator *allocator, LZPool *pool){
-    pool->header_size = round_size(LZPOOL_DEFAULT_ALIGNMENT, HEADER_SIZE);
-    pool->slot_size = round_size(LZPOOL_DEFAULT_ALIGNMENT, slot_size);
-    pool->slots = (LZPoolHeaderList){0};
-    pool->subpools = (LZSubPoolList){0};
-    pool->allocator = allocator;
+
+    list->len--;
 }
 
-void lzpool_destroy_deinit(LZPool *pool){
+void init_subpool_slots(
+    LZSubPool *subpool,
+    LZPoolSlotList *slots,
+    size_t header_size,
+    size_t slot_size
+){
+    size_t slots_count = subpool->capacity;
+    char *offset = subpool->slots;
+    LZPoolHeader *prev = NULL;
+
+    for (size_t i = 0; i < slots_count; i++){
+        LZPoolHeader *slot = (LZPoolHeader *)offset;
+
+        if(prev){
+            prev->next = slot;
+        }
+
+        *slot = (LZPoolHeader){
+            .magic   = MAGIC_NUMBER,
+            .used    = 0,
+            .subpool = subpool,
+            .prev    = prev
+        };
+
+        insert_slot(slots, slot);
+
+        offset += header_size + slot_size;
+        prev = slot;
+    }
+}
+
+inline void init_pool(LZPool *pool, const LZPoolAllocator *allocator, size_t slot_size){
+    *pool = (LZPool){
+        .header_size = round_size(LZPOOL_DEFAULT_ALIGNMENT, HEADER_SIZE),
+        .slot_size   = round_size(LZPOOL_DEFAULT_ALIGNMENT, slot_size),
+        .capacity    = 0,
+        .slots       = (LZPoolSlotList){0},
+        .subpools    = (LZSubPoolList){0},
+        .allocator   = allocator
+    };
+}
+
+void deinit_pool(LZPool *pool){
     if(!pool){
         return;
     }
 
     size_t header_size = pool->header_size;
     size_t slot_size = pool->slot_size;
-    LZPoolAllocator *allocator = pool->allocator;
+    const LZPoolAllocator *allocator = pool->allocator;
+
     LZSubPool *current = pool->subpools.head;
     LZSubPool *next = NULL;
 
     while (current){
         next = current->next;
 
-        destroy_subpool(header_size, slot_size, current, allocator);
+        destroy_subpool(current, allocator, header_size, slot_size);
 
         current = next;
     }
 }
 
-LZPool *lzpool_create(size_t slot_size, LZPoolAllocator *allocator){
-    LZPool *pool = MEMORY_ALLOC(LZPool, 1, allocator);
+//--------------------------------------------------------------------------//
+//                          PUBLIC IMPLEMENTATION                           //
+//--------------------------------------------------------------------------//
+LZPool *lzpool_create(const LZPoolAllocator *allocator, size_t slot_size){
+    LZPool *pool = MEMORY_ALLOC(allocator, LZPool, 1);
 
     if(!pool){
         return NULL;
     }
 
-    pool->header_size = round_size(LZPOOL_DEFAULT_ALIGNMENT, HEADER_SIZE);
-    pool->slot_size = round_size(LZPOOL_DEFAULT_ALIGNMENT, slot_size);
-    pool->slots = (LZPoolHeaderList){0};
-    pool->subpools = (LZSubPoolList){0};
-    pool->allocator = allocator;
+    init_pool(pool, allocator, slot_size);
 
     return pool;
 }
@@ -236,59 +292,112 @@ void lzpool_destroy(LZPool *pool){
         return;
     }
 
-    size_t header_size = pool->header_size;
-    size_t slot_size = pool->slot_size;
-    LZPoolAllocator *allocator = pool->allocator;
-    LZSubPool *current = pool->subpools.head;
-    LZSubPool *next = NULL;
+    deinit_pool(pool);
 
-    while (current){
-        next = current->next;
-
-        destroy_subpool(header_size, slot_size, current, allocator);
-
-        current = next;
-    }
-
-    MEMORY_DEALLOC(pool, LZPool, 1, allocator);
+    MEMORY_DEALLOC(pool->allocator, pool, LZPool, 1);
 }
 
-int lzpool_prealloc(size_t slots_count, LZPool *pool){
-    LZPoolAllocator *allocator = pool->allocator;
+inline const LZPoolAllocator *lzpool_allocator(const LZPool *pool){
+    return pool->allocator;
+}
 
+inline size_t lzpool_available_slots_count(const LZPool *pool){
+    return pool->slots.len;
+}
+
+inline size_t lzpool_subpools_count(const LZPool *pool){
+    return pool->subpools.len;
+}
+
+inline size_t lzpool_available(const LZPool *pool){
+    return pool->available;
+}
+
+inline size_t lzpool_capacity(const LZPool *pool){
+    return pool->capacity;
+}
+
+inline int lzpool_is_used(const void *ptr){
+    return slot_from_ptr(ptr, round_size(LZPOOL_DEFAULT_ALIGNMENT, HEADER_SIZE))->used;
+}
+
+int lzpool_prealloc_count(LZPool *pool, size_t count){
     size_t header_size = pool->header_size;
     size_t slot_size = pool->slot_size;
-    size_t slots_size = (header_size + slot_size) * slots_count;
-    void *slots = MEMORY_ALLOC(char, slots_size, allocator);
-    LZSubPool *subpool = MEMORY_ALLOC(LZSubPool, 1, allocator);
+    const LZPoolAllocator *allocator = pool->allocator;
+
+    size_t capacity = (header_size + slot_size) * count;
+    void *slots = MEMORY_ALLOC(allocator, char, capacity);
+    LZSubPool *subpool = MEMORY_ALLOC(allocator, LZSubPool, 1);
 
     if(!slots || !subpool){
-        MEMORY_DEALLOC(slots, char, slot_size, allocator);
-        MEMORY_DEALLOC(subpool, LZSubPool, 1, allocator);
+        MEMORY_DEALLOC(allocator, slots, char, slot_size);
+        MEMORY_DEALLOC(allocator, subpool, LZSubPool, 1);
+
         return 1;
     }
 
-    subpool->slots_used = 0;
-    subpool->slots_count = slots_count;
-    subpool->slots = slots;
-    subpool->prev = NULL;
-    subpool->next = NULL;
+    *subpool = (LZSubPool){
+        .used = 0,
+        .capacity = count,
+        .slots = slots,
+        .pool = pool,
+        .prev = NULL,
+        .next = NULL
+    };
 
-    init_subpool_slots(header_size, slot_size, subpool, &pool->slots, pool);
-    insert_subpool(subpool, &pool->subpools);
+    init_subpool_slots(subpool, &pool->slots, header_size, slot_size);
+    insert_subpool(&pool->subpools, subpool);
+
+    pool->available += capacity;
+    pool->capacity += capacity;
+
+    return 0;
+}
+
+int lzpool_prealloc_size(LZPool *pool, size_t size){
+    size_t header_size = pool->header_size;
+    size_t slot_size = pool->slot_size;
+    const LZPoolAllocator *allocator = pool->allocator;
+
+    void *slots = MEMORY_ALLOC(allocator, char, size);
+    LZSubPool *subpool = MEMORY_ALLOC(allocator, LZSubPool, 1);
+
+    if(!slots || !subpool){
+        MEMORY_DEALLOC(allocator, slots, char, slot_size);
+        MEMORY_DEALLOC(allocator, subpool, LZSubPool, 1);
+
+        return 1;
+    }
+
+    *subpool = (LZSubPool){
+        .used = 0,
+        .capacity = size / (header_size + slot_size),
+        .slots = slots,
+        .pool = pool,
+        .prev = NULL,
+        .next = NULL
+    };
+
+    init_subpool_slots(subpool, &pool->slots, header_size, slot_size);
+    insert_subpool(&pool->subpools, subpool);
+
+    pool->available += size;
+    pool->capacity += size;
 
     return 0;
 }
 
 void *lzpool_alloc(LZPool *pool){
-    LZPoolHeaderList *slots = &pool->slots;
+    LZPoolSlotList *slots = &pool->slots;
     LZPoolHeader *slot = slots->head;
 
     if(slot){
-        slot->used = 1;
-        slot->subpool->slots_used++;
+        remove_slot(slots, slot);
 
-        remove_slot(slot, slots);
+        slot->used = 1;
+        slot->subpool->used++;
+        pool->available -= pool->header_size + pool->slot_size;
 
         return slot_chunk(pool->header_size, slot);
     }
@@ -296,10 +405,20 @@ void *lzpool_alloc(LZPool *pool){
     return NULL;
 }
 
-void *lzpool_alloc_x(size_t slots_count, LZPool *pool){
-    LZPoolHeaderList *slots = &pool->slots;
+void *lzpool_alloc_backup_count(LZPool *pool, size_t count){
+    LZPoolSlotList *slots = &pool->slots;
 
-    if(slots->len == 0 && lzpool_prealloc(slots_count, pool)){
+    if(slots->len == 0 && lzpool_prealloc_count(pool, count)){
+        return NULL;
+    }
+
+    return lzpool_alloc(pool);
+}
+
+void *lzpool_alloc_backup_size(LZPool *pool, size_t size){
+    LZPoolSlotList *slots = &pool->slots;
+
+    if(slots->len == 0 && lzpool_prealloc_size(pool, size)){
         return NULL;
     }
 
@@ -312,16 +431,17 @@ void lzpool_dealloc(void *ptr){
     }
 
     size_t header_size = round_size(LZPOOL_DEFAULT_ALIGNMENT, HEADER_SIZE);
-    LZPoolHeader *slot = slot_from_ptr(header_size, ptr);
-    LZPool *pool = (LZPool *)slot->pool;
+    LZPoolHeader *slot = slot_from_ptr(ptr, header_size);
     LZSubPool *subpool = slot->subpool;
+    LZPool *pool = subpool->pool;
 
     assert(slot->used && "Trying to free unused memory");
 
-    insert_slot(slot, &pool->slots);
+    insert_slot(&pool->slots, slot);
 
     slot->used = 0;
-    subpool->slots_used++;
+    subpool->used--;
+    pool->available += pool->header_size + pool->slot_size;
 }
 
 void lzpool_dealloc_release(void *ptr){
@@ -330,28 +450,31 @@ void lzpool_dealloc_release(void *ptr){
     }
 
     size_t header_size = round_size(LZPOOL_DEFAULT_ALIGNMENT, HEADER_SIZE);
-    LZPoolHeader *slot = slot_from_ptr(header_size, ptr);
-    LZPool *pool = (LZPool *)slot->pool;
+    LZPoolHeader *slot = slot_from_ptr(ptr, header_size);
     LZSubPool *subpool = slot->subpool;
+    LZPool *pool = subpool->pool;
 
     assert(slot->used && "Trying to free unused memory");
 
-    insert_slot(slot, &pool->slots);
+    insert_slot(&pool->slots, slot);
 
     slot->used = 0;
-    subpool->slots_used--;
+    subpool->used--;
+    pool->available += pool->header_size + pool->slot_size;
 
-    if(subpool->slots_used == 0){
+    if(subpool->used == 0){
         size_t slot_size = pool->slot_size;
-        size_t slots_count = subpool->slots_count;
+        size_t slots_count = subpool->capacity;
         void *slots = subpool->slots;
 
         for (size_t i = 0; i < slots_count; i++){
-            LZPoolHeader *current = get_slot_at(i, header_size, slot_size, slots);
-            remove_slot(current, &pool->slots);
+            LZPoolHeader *current = get_slot_at(slots, header_size, slot_size, i);
+            remove_slot(&pool->slots, current);
         }
 
-        remove_subpool(subpool, &pool->subpools);
-        destroy_subpool(header_size, slot_size, subpool, pool->allocator);
+        pool->capacity -= (header_size + slot_size) * subpool->capacity;
+
+        remove_subpool(&pool->subpools, subpool);
+        destroy_subpool(subpool, pool->allocator, header_size, slot_size);
     }
 }

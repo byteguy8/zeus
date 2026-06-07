@@ -5,8 +5,8 @@
 #include "essentials/memory.h"
 
 typedef struct native_module{
-	char *name;
-	LZOHTable *symbols;
+	char            *name;
+	LZOHTable       *symbols;
     const Allocator *allocator;
 }NativeModule;
 

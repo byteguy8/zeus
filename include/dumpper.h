@@ -6,15 +6,16 @@
 #include "vm/module.h"
 
 typedef struct dumpper{
-    size_t ip;
-    LZOHTable *modules;
-    Module *main_module;
-    Module *current_module;
-    Fn *current_fn;
-    Allocator *allocator;
+    size_t          ip;
+    LZOHTable       *contexts;
+    ModuleContext   *main_context;
+    ModuleContext   *current_context;
+    Fn              *current_fn;
+    LZBStr          *helper_str;
+    const Allocator *allocator;
 }Dumpper;
 
-Dumpper *dumpper_create(Allocator *allocator);
-void dumpper_dump(LZOHTable *modules, Module *main_module, Dumpper *dumpper);
+Dumpper *dumpper_create(const Allocator *allocator);
+void dumpper_dump(LZOHTable *contexts, Module *main_module, Dumpper *dumpper);
 
 #endif

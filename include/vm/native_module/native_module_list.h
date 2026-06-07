@@ -1,26 +1,26 @@
-#ifndef NATIVE_LIST
-#define NATIVE_LIST
+#ifndef NATIVE_MODULE_LIST
+#define NATIVE_MODULE_LIST
 
 #include "essentials/memory.h"
-#include "vmu.h"
+#include "vm_utils.h"
 
 static LZOHTable *list_symbols = NULL;
 
-Value native_fn_list_size(uint8_t argsc, Value *values, Value target, void *context){
+Value native_fn_list_size(VM *vm, uint8_t argsc, Value *values, Value target){
     ListObj *list_obj = VALUE_TO_LIST(target);
-    return INT_VALUE(vmu_list_len(list_obj));
+    return INT_VALUE(vm_list_len(list_obj));
 }
 
-Value native_fn_list_clear(uint8_t argsc, Value *values, Value target, void *context){
+Value native_fn_list_clear(VM *vm, uint8_t argsc, Value *values, Value target){
     ListObj *list_obj = VALUE_TO_LIST(target);
-    return INT_VALUE(vmu_list_clear(list_obj));
+    return INT_VALUE(vm_list_clear(list_obj));
 }
 
-Value native_fn_list_to_array(uint8_t argsc, Value *values, Value target, void *context){
+Value native_fn_list_to_array(VM *vm, uint8_t argsc, Value *values, Value target){
     ListObj *list_obj = VALUE_TO_LIST(target);
     DynArr *items = list_obj->items;
     size_t len = dynarr_len(items);
-    ArrayObj *array_obj = vmu_create_array(len, VMU_VM);
+    ArrayObj *array_obj = vm_create_array(vm, len);
 
     for (size_t i = 0; i < len; i++){
         array_obj->values[i] = DYNARR_GET_AS(items, Value, i);
@@ -29,61 +29,61 @@ Value native_fn_list_to_array(uint8_t argsc, Value *values, Value target, void *
     return OBJ_VALUE(array_obj);
 }
 
-Value native_fn_list_first(uint8_t argsc, Value *values, Value target, void *context){
+Value native_fn_list_first(VM *vm, uint8_t argsc, Value *values, Value target){
     ListObj *list_obj = VALUE_TO_LIST(target);
     DynArr *items = list_obj->items;
     size_t len = dynarr_len(items);
 
     if(len == 0){
-        vmu_error(VMU_VM, "Failed to get fist list item: list is empty");
+        vm_error(vm, "Failed to get fist list item: list is empty");
     }
 
     return DYNARR_GET_AS(items, Value, 0);
 }
 
-Value native_fn_list_last(uint8_t argsc, Value *values, Value target, void *context){
+Value native_fn_list_last(VM *vm, uint8_t argsc, Value *values, Value target){
     ListObj *list_obj = VALUE_TO_LIST(target);
     DynArr *items = list_obj->items;
     size_t len = dynarr_len(items);
 
     if(len == 0){
-        vmu_error(VMU_VM, "Failed to get fist list item: list is empty");
+        vm_error(vm, "Failed to get fist list item: list is empty");
     }
 
     return DYNARR_GET_AS(items, Value, len - 1);
 }
 
-Value native_fn_list_insert(uint8_t argsc, Value *values, Value target, void *context){
+Value native_fn_list_insert(VM *vm, uint8_t argsc, Value *values, Value target){
     ListObj *target_list_obj = VALUE_TO_LIST(target);
     Value value = values[0];
 
-    vmu_list_insert(value, target_list_obj, VMU_VM);
+    vm_list_insert(vm, value, target_list_obj);
 
     return value;
 }
 
-Value native_fn_list_insert_at(uint8_t argsc, Value *values, Value target, void *context){
+Value native_fn_list_insert_at(VM *vm, uint8_t argsc, Value *values, Value target){
     ListObj *target_list_obj = VALUE_TO_LIST(target);
-    int64_t at = validate_value_int_arg(values[0], 1, "at", VMU_VM);
+    int64_t at = vm_utils_value_validate_int_arg(vm, values[0], 1, "at");
     Value value = values[1];
 
-    vmu_list_insert_at(at, value, target_list_obj, VMU_VM);
+    vm_list_insert_at(vm, at, value, target_list_obj);
 
     return value;
 }
 
-Value native_fn_list_remove(uint8_t argsc, Value *values, Value target, void *context){
+Value native_fn_list_remove(VM *vm, uint8_t argsc, Value *values, Value target){
     ListObj *target_list_obj = VALUE_TO_LIST(target);
-    int64_t at = validate_value_int_arg(values[0], 1, "at", VMU_VM);
-    return vmu_list_remove_at(at, target_list_obj, VMU_VM);
+    int64_t at = vm_utils_value_validate_int_arg(vm, values[0], 1, "at");
+    return vm_list_remove_at(vm, at, target_list_obj);
 }
 
 NativeFn *native_list_get(size_t key_size, const char *key, VM *vm){
     if(!list_symbols){
-        Allocator *allocator = &vm->front_allocator;
+        Allocator *allocator = vm_allocator(vm);
         list_symbols = MEMORY_LZOHTABLE(allocator);
 
-        dynarr_insert_ptr(vm->native_symbols, list_symbols);
+        vm_add_native_symbols(vm, list_symbols);
 
         vm_factory_native_fn_add_info(list_symbols, allocator, "len", 0, native_fn_list_size);
         vm_factory_native_fn_add_info(list_symbols, allocator, "clear", 0, native_fn_list_clear);

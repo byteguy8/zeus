@@ -12,30 +12,28 @@
 #include <setjmp.h>
 
 typedef struct lexer{
-    jmp_buf err_buf;
-    int status;
-	int line;
-	int start;
-	int current;
-    const char *pathname;
-    const DStr *source;
-	DynArr *tokens;
+    jmp_buf         err_buf;
+	int             line;
+	size_t          start;
+	size_t          current;
+    const char      *pathname;
+    const DStr      *source;
+	DynArr          *tokens;
     const LZOHTable *keywords;
-    LZArena *ctarena;
-    Allocator *ctarena_allocator;
 
     const Allocator *rtallocator;
     const Allocator *ctallocator;
+    Allocator       *lexer_allocator;
 }Lexer;
 
 Lexer *lexer_create(const Allocator *compile_time_allocator, const Allocator *runtime_allocator);
 
-int lexer_scan(
+int lexer_lex(
+    Lexer *lexer,
     const DStr *source,
-    DynArr *tokens,
-    const LZOHTable *keywords,
     const char *pathname,
-    Lexer *lexer
+    const LZOHTable *keywords,
+    DynArr *tokens
 );
 
 #endif

@@ -43,12 +43,12 @@
 #elif __linux__
     int utils_files_exists(const char *pathname);
     int utils_files_can_read(const char *pathname);
-    int utils_files_is_directory(char *pathname);
+    int utils_files_is_directory(const char *pathname);
     int utils_files_is_regular(char *pathname);
 #endif
 
 char *utils_files_parent_pathname(const Allocator *allocator, const char *pathname);
-char *utils_files_cwd(const Allocator *allocator);
+char *utils_files_cwd(const Allocator *allocator, size_t *out_len);
 //---------------------------------  TIME  ---------------------------------//
 int64_t utils_millis();
 void utils_sleep(int64_t time);

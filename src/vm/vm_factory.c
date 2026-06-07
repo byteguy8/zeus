@@ -43,12 +43,131 @@ void vm_factory_native_fn_destroy(NativeFn *native_fn){
     MEMORY_DEALLOC(allocator, NativeFn, 1, native_fn);
 }
 
-Fn *vm_factory_fn_create(const Allocator *allocator, const char *name, uint8_t arity){
+ModuleContext *vm_factory_module_context_create(const Allocator *allocator, const char *pathname){
+    char *cloned_pathname = memory_clone_cstr(allocator, pathname, NULL);
+    LZOHTable *globals = MEMORY_LZOHTABLE_LEN(allocator, 64);
+    DynArr *str_consts = MEMORY_DYNARR_TYPE(allocator, StaticStr);
+    DynArr *fns = MEMORY_DYNARR_PTR(allocator);
+    DynArr *closures = MEMORY_DYNARR_PTR(allocator);
+    ModuleContext *context = MEMORY_ALLOC(allocator, ModuleContext, 1);
+
+    MEMORY_CHECK(cloned_pathname);
+    MEMORY_CHECK(str_consts);
+    MEMORY_CHECK(fns);
+    MEMORY_CHECK(closures);
+    MEMORY_CHECK(globals);
+    MEMORY_CHECK(context);
+
+    *context = (ModuleContext){
+        .resolved = 0,
+        .pathname = cloned_pathname,
+        .str_consts = str_consts,
+        .fns = fns,
+        .closures = closures,
+        .globals = globals
+    };
+
+    goto OK;
+
+ERROR:
+    memory_destroy_cstr(allocator, cloned_pathname);
+    dynarr_destroy(str_consts);
+    dynarr_destroy(fns);
+    dynarr_destroy(closures);
+    LZOHTABLE_DESTROY(globals);
+    MEMORY_DEALLOC(allocator, Module, 1, context);
+
+    return NULL;
+
+OK:
+    return context;
+}
+
+void vm_factory_module_context_destroy(ModuleContext *module_context, const Allocator *allocator){
+    if(!module_context){
+        return;
+    }
+
+    LZOHTABLE_DESTROY(module_context->globals);
+    dynarr_destroy(module_context->str_consts);
+    MEMORY_DEALLOC(allocator, Module, 1, module_context);
+}
+
+Module *vm_factory_module_create(const Allocator *allocator, const char *name, const char *pathname){
+    char *cloned_name = memory_clone_cstr(allocator, name, NULL);
+    ModuleContext *context = vm_factory_module_context_create(allocator, pathname);
+    Module *module = MEMORY_ALLOC(allocator, Module, 1);
+
+    MEMORY_CHECK(cloned_name);
+    MEMORY_CHECK(context);
+    MEMORY_CHECK(module);
+
+    *module = (Module){
+        .original = 1,
+        .name = cloned_name,
+        .context = context
+    };
+
+    goto OK;
+
+ERROR:
+    memory_destroy_cstr(allocator, cloned_name);
+    vm_factory_module_context_destroy(context, allocator);
+    MEMORY_DEALLOC(allocator, Module, 1, module);
+
+    return NULL;
+
+OK:
+    return module;
+}
+
+Module *vm_factory_module_sole_create(const Allocator *allocator, ModuleContext *context, const char *name, const char *pathname){
+    char *cloned_name = memory_clone_cstr(allocator, name, NULL);
+    char *cloned_pathname = memory_clone_cstr(allocator, pathname, NULL);
+    Module *module = MEMORY_ALLOC(allocator, Module, 1);
+
+    MEMORY_CHECK(cloned_name);
+    MEMORY_CHECK(cloned_pathname);
+    MEMORY_CHECK(module);
+
+    *module = (Module){
+        .name = cloned_name,
+        .context = context
+    };
+
+    goto OK;
+
+ERROR:
+    memory_destroy_cstr(allocator, cloned_name);
+    memory_destroy_cstr(allocator, cloned_pathname);
+    vm_factory_module_context_destroy(context, allocator);
+    MEMORY_DEALLOC(allocator, Module, 1, module);
+
+    return NULL;
+
+OK:
+    return module;
+}
+
+void vm_factory_module_destroy(Module *module, const Allocator *allocator){
+    if(!module){
+        return;
+    }
+
+    memory_destroy_cstr(allocator, module->name);
+    vm_factory_module_context_destroy(module->context, allocator);
+    MEMORY_DEALLOC(allocator, Module, 1, module);
+}
+
+Fn *vm_factory_module_fn_create(const Allocator *allocator, Module *module, const char *name, uint8_t arity, size_t *out_fn_idx){
+    ModuleContext *context = module->context;
+    DynArr *fns = context->fns;
+
     char *cloned_name = memory_clone_cstr(allocator, name, NULL);
     DynArr *chunks = MEMORY_DYNARR_TYPE(allocator, uint8_t);
     DynArr *iconsts = MEMORY_DYNARR_TYPE(allocator, int64_t);
     DynArr *fconsts = MEMORY_DYNARR_TYPE(allocator, double);
-    DynArr *locations = MEMORY_DYNARR_TYPE(allocator, OPCodeLocation);
+    DynArr *locations = MEMORY_DYNARR_TYPE(allocator, OpCodeInfo);
     Fn *fn = MEMORY_ALLOC(allocator, Fn, 1);
 
     MEMORY_CHECK(cloned_name);
@@ -57,6 +176,7 @@ Fn *vm_factory_fn_create(const Allocator *allocator, const char *name, uint8_t a
     MEMORY_CHECK(fconsts);
     MEMORY_CHECK(locations);
     MEMORY_CHECK(fn);
+    MEMORY_CHECK(!dynarr_insert_ptr(fns, fn));
 
     *fn = (Fn){
         .arity = arity,
@@ -65,9 +185,12 @@ Fn *vm_factory_fn_create(const Allocator *allocator, const char *name, uint8_t a
         .iconsts = iconsts,
         .fconsts = fconsts,
         .locations = locations,
-        .module = NULL,
-        .allocator = allocator
+        .module = module
     };
+
+    if(out_fn_idx){
+        *out_fn_idx = dynarr_len(fns) - 1;
+    }
 
     goto OK;
 
@@ -82,168 +205,38 @@ ERROR:
     return NULL;
 
 OK:
+
     return fn;
 }
 
-void vm_factory_fn_destroy(Fn *fn){
-    if(!fn){
-        return;
-    }
+Closure *vm_factory_module_closure_create(const Allocator *allocator, Module *module, size_t locals_len, size_t *out_closure_idx){
+    ModuleContext *module_context = module->context;
+    DynArr *closures = module_context->closures;
 
-    const Allocator *allocator = fn->allocator;
+    uint8_t *locals = MEMORY_ALLOC(allocator, uint8_t, locals_len);
 
-    memory_destroy_cstr(allocator, fn->name);
-    dynarr_destroy(fn->chunks);
-    dynarr_destroy(fn->iconsts);
-    dynarr_destroy(fn->fconsts);
-    dynarr_destroy(fn->locations);
-    MEMORY_DEALLOC(allocator, Fn, 1, fn);
-}
-
-SubModule *vm_factory_submodule_create(const Allocator *allocator){
-    LZOHTable *globals = MEMORY_LZOHTABLE_LEN(allocator, 64);
-    DynArr *static_strs = MEMORY_DYNARR_TYPE(allocator, VmStaticStr);
-    DynArr *symbols = MEMORY_DYNARR_TYPE(allocator, SubModuleSymbol);
-    SubModule *submodule = MEMORY_ALLOC(allocator, SubModule, 1);
-
-    MEMORY_CHECK(globals);
-    MEMORY_CHECK(static_strs);
-    MEMORY_CHECK(symbols);
-    MEMORY_CHECK(submodule);
-
-    *submodule = (SubModule){
-        .resolved = 0,
-        .globals = globals,
-        .static_strs = static_strs,
-        .symbols = symbols,
-        .allocator = allocator
+    size_t closure_idx = dynarr_len(closures);
+    Closure closure = (Closure){
+        .locals_len = locals_len,
+        .locals = locals
     };
+
+    MEMORY_CHECK(locals);
+    MEMORY_CHECK(!dynarr_insert(closures, &closure));
 
     goto OK;
 
 ERROR:
-    LZOHTABLE_DESTROY(globals);
-    dynarr_destroy(static_strs);
-    dynarr_destroy(symbols);
-    MEMORY_DEALLOC(allocator, SubModule, 1, submodule);
+    MEMORY_DEALLOC(allocator, uint8_t, locals_len, locals);
 
     return NULL;
 
 OK:
-    return submodule;
-}
-
-void vm_factory_submodule_destroy(SubModule *submodule){
-    if(!submodule){
-        return;
+    if(out_closure_idx){
+        *out_closure_idx = closure_idx;
     }
 
-    LZOHTABLE_DESTROY(submodule->globals);
-    dynarr_destroy(submodule->static_strs);
-    dynarr_destroy(submodule->symbols);
-    MEMORY_DEALLOC(submodule->allocator, SubModule, 1, submodule);
-}
-
-Module *vm_factory_module_create(const Allocator *allocator, const char *name, const char *pathname){
-    char *cloned_name = memory_clone_cstr(allocator, name, NULL);
-    char *cloned_pathname = memory_clone_cstr(allocator, pathname, NULL);
-    SubModule *submodule = vm_factory_submodule_create(allocator);
-    Module *module = MEMORY_ALLOC(allocator, Module, 1);
-
-    MEMORY_CHECK(cloned_name);
-    MEMORY_CHECK(cloned_pathname);
-    MEMORY_CHECK(submodule);
-    MEMORY_CHECK(module);
-
-    *module = (Module){
-        .original = 1,
-        .name = cloned_name,
-        .pathname = cloned_pathname,
-        .submodule = submodule,
-        .prev = NULL
-    };
-
-    goto OK;
-
-ERROR:
-    memory_destroy_cstr(allocator, cloned_name);
-    memory_destroy_cstr(allocator, cloned_pathname);
-    vm_factory_submodule_destroy(submodule);
-    MEMORY_DEALLOC(allocator, Module, 1, module);
-
-    return NULL;
-
-OK:
-    return module;
-}
-
-void vm_factory_module_destroy(Module *module){
-    if(!module){
-        return;
-    }
-
-    const Allocator *allocator = module->submodule->allocator;
-
-    memory_destroy_cstr(allocator, module->name);
-    memory_destroy_cstr(allocator, module->pathname);
-    vm_factory_submodule_destroy(module->submodule);
-    MEMORY_DEALLOC(allocator, Module, 1, module);
-}
-
-int vm_factory_module_add_fn(Module *module, Fn *fn, size_t *out_idx){
-    SubModule *submodule = module->submodule;
-    DynArr *symbols = submodule->symbols;
-    SubModuleSymbol symbol = {
-        .type = FUNCTION_SUBMODULE_SYM_TYPE,
-        .value = fn
-    };
-
-    if(dynarr_insert(symbols, &symbol)){
-        return 1;
-    }
-
-    fn->module = module;
-
-    if(out_idx){
-        *out_idx = dynarr_len(symbols) - 1;
-    }
-
-    return 0;
-}
-
-int vm_factory_module_add_closure(Module *module, MetaClosure *closure, size_t *out_idx){
-    SubModule *submodule = module->submodule;
-    DynArr *symbols = submodule->symbols;
-    SubModuleSymbol symbol = {
-        .type = CLOSURE_SUBMODULE_SYM_TYPE,
-        .value = closure
-    };
-
-    if(dynarr_insert(symbols, &symbol)){
-        return 1;
-    }
-
-    if(out_idx){
-        *out_idx = dynarr_len(symbols) - 1;
-    }
-
-    return 0;
-}
-
-int vm_factory_module_add_module(Module *target_module, Module *module){
-    SubModule *submodule = target_module->submodule;
-    DynArr *symbols = submodule->symbols;
-
-    SubModuleSymbol symbol = {
-        .type = MODULE_SUBMODULE_SYM_TYPE,
-        .value = module
-    };
-
-    if(dynarr_insert(symbols, &symbol)){
-        return 1;
-    }
-
-    return 0;
+    return (Closure *)dynarr_get_raw(closures, closure_idx);
 }
 
 int vm_factory_module_globals_add_obj(
@@ -257,13 +250,13 @@ int vm_factory_module_globals_add_obj(
         name,
         sizeof(GlobalValue),
         &((GlobalValue){
-            .access = PRIVATE_GLOVAL_VALUE_TYPE,
+            .access = PRIVATE_GLOBAL_VALUE_TYPE,
             .value = {
                 .type = OBJ_VALUE_TYPE,
                 .content.obj_val = obj
             }
         }),
-        module->submodule->globals,
+        module->context->globals,
         NULL
     );
 }
@@ -351,7 +344,7 @@ int vm_factory_native_module_add_native_fn(
 
     Value value = {
         .type = OBJ_VALUE_TYPE,
-        .content.obj_val = native_fn_obj
+        .content.obj_val = (Obj *)native_fn_obj
     };
 
     if(vm_factory_native_module_add_value(module, name, value)){

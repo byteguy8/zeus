@@ -6,22 +6,21 @@ typedef enum opcode{
     OP_EMPTY,    // push NULL value equivalent
     OP_FALSE,    // push FALSE value
     OP_TRUE,     // push TRUE value
-    OP_CINT,     // push integer of 1 byte
     OP_INT,      // push integer of 8 bytes
     OP_FLOAT,    // push float
     OP_STRING,   // push string
-    OP_STTE,     // start constructing template
-    OP_ETTE,     // end constructing template and push it
+    OP_START_TEMPLATE,     // start constructing template
+    OP_END_TEMPLATE,     // end constructing template and push it
     OP_ARRAY,
 	OP_LIST,
     OP_DICT,
 	OP_RECORD,
 
-    OP_WTTE,
-    OP_IARRAY,
-    OP_ILIST,
-    OP_IDICT,
-    OP_IRECORD,
+    OP_WRITE_TEMPLATE,
+    OP_INIT_ARRAY,
+    OP_INIT_LIST,
+    OP_INIT_DICT,
+    OP_INIT_RECORD,
 
     OP_CONCAT,
     OP_MULSTR,
@@ -55,34 +54,38 @@ typedef enum opcode{
     OP_NOT,
     OP_NNOT,
 
-    OP_LSET,    // set local symbol
-    OP_LGET,    // get local symbol
-    OP_OSET,    // set out value symbol (for closures)
-    OP_OGET,    // get out value symbol (for closures)
-    OP_GDEF,    // define a global symbol
-    OP_GASET,   // set global symbol access
-    OP_GSET,    // get global symbol
-    OP_GGET,    // set global symbol
-    OP_NGET,    // get native symbol
-    OP_SGET,    // get symbol from list of symbols
-	OP_ASET,    // set a value inside array
-    OP_RSET,    // set a value inside record
+    OP_LOCAL_SET,    // set local symbol
+    OP_LOCAL_GET,    // get local symbol
+    OP_FOREIGN_SET,    // set out value symbol (for closures)
+    OP_FOREIGN_GET,    // get out value symbol (for closures)
+    OP_GLOBAL_DEF,    // define a global symbol
+    OP_GLOBAL_ACCESS_SET,   // set global symbol access
+    OP_GLOBAL_SET,    // get global symbol
+    OP_GLOBAL_GET,    // set global symbol
+    OP_NATIVE_GET,    // get native symbol
+    OP_FN,
+    OP_CLOSURE,    // get symbol from list of symbols
+	OP_ARRAY_SET,    // set a value inside array
+    OP_RECORD_SET,    // set a value inside record
 
     OP_POP,
+    OP_OFFSET,
 
     OP_JMP,
 	OP_JIF,
 	OP_JIT,
 
+    OP_IMPORT,
     OP_CALL,
     OP_ACCESS,
     OP_INDEX,
+    OP_EXIT,
     OP_RET,
 	OP_IS,
-    OP_TRYO,
-    OP_TRYC,
+    OP_TRY_IN,
+    OP_TRY_OUT,
     OP_THROW,
-    OP_HLT,
+    OP_HALT,
 }OPCode;
 
 #endif

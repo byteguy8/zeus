@@ -1,21 +1,22 @@
 #ifndef RANDOM_NATIVE_H
 #define RANDOM_NATIVE_H
 
-#include "essentials/memory.h"
+#include "vm/native.h"
+#include "vm/vm_utils.h"
 
-#include "vm/obj.h"
-#include "vm/types_utils.h"
-#include "vm/vmu.h"
-
-#include "native.h"
 #include "xoshiro256.h"
 
-typedef struct random_native{
-	NativeHeader header;
-	XOShiro256 xos256;
-}RandomNative;
+#define NATIVE_RANDOM_NAME "random"
 
-RandomNative *random_native_create(Allocator *allocator);
-CREATE_VALIDATE_NATIVE_DECLARATION(random_native, RandomNative)
+typedef struct native_random{
+	native_t   header;
+	XOShiro256 xos256;
+}NativeRandom;
+
+CREATE_VALIDATE_NATIVE_DECLARATION(native_random, NativeRandom)
+
+void native_random_init(NativeContext *context);
+NativeRandom *native_random_create(NativeContext *context);
+NativeRandom *native_random_create_seed(NativeContext *context, int64_t seed);
 
 #endif

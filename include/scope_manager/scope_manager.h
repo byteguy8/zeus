@@ -10,34 +10,31 @@
 #include <setjmp.h>
 
 typedef struct scope_manager{
+    jmp_buf         *err_buf;
+
     depth_t         depth;
-	jmp_buf         *buf;
     Scope           *scope_stack;
     Scope           *fn_scope_stack;
     Scope           *global_scope;
+    DynArr          *current_scopes;
 
-	LZPool          *local_symbols_pool;
-    LZPool          *global_symbols_pool;
-    LZPool          *native_fn_symbols_pool;
-	LZPool          *fn_symbols_pool;
-	LZPool          *module_symbols_pool;
-	LZPool          *scopes_pool;
-
-    LZArena         *manager_arena;
-    Allocator       *manager_arena_allocator;
 	const Allocator *allocator;
 }ScopeManager;
 
 ScopeManager *scope_manager_create(const Allocator *ctallocator);
 void scope_manager_destroy(ScopeManager *manager);
 
-Scope *scope_manager_peek(const ScopeManager *scope_manager);
-Scope *scope_manager_push(ScopeManager *manager, ScopeType type);
+DynArr *scope_manager_push_scopes(ScopeManager *manager);
+DynArr *scope_manager_pop_scopes(ScopeManager *manager, DynArr *old_scopes);
+
+Scope *scope_manager_peek(const ScopeManager *manager);
+Scope *scope_manager_push(ScopeManager *manager, ScopeKind type);
 void scope_manager_pop(ScopeManager *scope_manager);
 
 int scope_manager_is_global_scope(const ScopeManager *manager);
-int scope_manager_is_scope_type(const ScopeManager *manager, ScopeType type);
+int scope_manager_is_scope_type(const ScopeManager *manager, ScopeKind type);
 int scope_manager_exists_procedure_name(const ScopeManager *manager, size_t name_len, const char *name);
+Scope *scope_manager_is_loop(const ScopeManager *manager);
 size_t scope_manager_locals_count(const ScopeManager *manager);
 
 Symbol *scope_manager_get_symbol(ScopeManager *scope_manager, Token *identifier);

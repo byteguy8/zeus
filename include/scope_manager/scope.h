@@ -12,18 +12,18 @@
 #include <setjmp.h>
 #include <inttypes.h>
 
-typedef enum scope_type{
-    BLOCK_SCOPE_TYPE,
-    IF_SCOPE_TYPE,
-    ELIF_SCOPE_TYPE,
-    ELSE_SCOPE_TYPE,
-    WHILE_SCOPE_TYPE,
-    FOR_SCOPE_TYPE,
-    TRY_SCOPE_TYPE,
-    CATCH_SCOPE_TYPE,
-	FN_SCOPE_TYPE,
-	GLOBAL_SCOPE_TYPE,
-}ScopeType;
+typedef enum scope_kind{
+    BLOCK_SCOPE_KIND,
+    IF_SCOPE_KIND,
+    ELIF_SCOPE_KIND,
+    ELSE_SCOPE_KIND,
+    WHILE_SCOPE_KIND,
+    FOR_SCOPE_KIND,
+    TRY_SCOPE_KIND,
+    CATCH_SCOPE_KIND,
+	FN_SCOPE_KIND,
+	GLOBAL_SCOPE_KIND,
+}ScopeKind;
 
 typedef uint8_t       depth_t;
 #define DEPTH_T_MAX   UINT8_MAX
@@ -52,21 +52,20 @@ struct fn_scope{
 };
 
 struct scope{
-    ScopeType type;
+    ScopeKind type;
 	LZOHTable *symbols;
-    void      *arena_state;
     Scope     *prev;
 
     union{
-        LocalScope  local_scope;
-        FnScope     fn_scope;
+        LocalScope local_scope;
+        FnScope    fn_scope;
     }content;
 };
 
-#define IS_LOCAL_SCOPE(_scope)           ((_scope)->type != GLOBAL_SCOPE_TYPE)
-#define IS_BLOCK_SCOPE(_scope)           ((_scope)->type == BLOCK_SCOPE_TYPE)
-#define IS_FN_SCOPE(_scope)              ((_scope)->type == FN_SCOPE_TYPE)
-#define IS_GLOBAL_SCOPE(_scope)          ((_scope)->type == GLOBAL_SCOPE_TYPE)
+#define IS_LOCAL_SCOPE(_scope)           ((_scope)->type != GLOBAL_SCOPE_KIND)
+#define IS_BLOCK_SCOPE(_scope)           ((_scope)->type == BLOCK_SCOPE_KIND)
+#define IS_FN_SCOPE(_scope)              ((_scope)->type == FN_SCOPE_KIND)
+#define IS_GLOBAL_SCOPE(_scope)          ((_scope)->type == GLOBAL_SCOPE_KIND)
 
 #define AS_LOCAL_SCOPE(_scope)           (&((_scope)->content.local_scope))
 #define AS_FN_SCOPE(_scope)              (&((_scope)->content.fn_scope))

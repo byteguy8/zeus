@@ -1,36 +1,38 @@
 #ifndef VALUE_H
 #define VALUE_H
 
+#include "vm_types.h"
+
 #include <stdint.h>
 
-typedef enum value_type{
+enum value_type{
     EMPTY_VALUE_TYPE,
     BOOL_VALUE_TYPE,
     INT_VALUE_TYPE,
     FLOAT_VALUE_TYPE,
 	OBJ_VALUE_TYPE
-}ValueType;
+};
 
-typedef struct value{
+struct value{
     ValueType type;
 
     union{
         uint8_t bool_val;
         int64_t int_val;
-        double float_val;
-		void *obj_val;
+        double  float_val;
+		Obj     *obj_val;
     }content;
-}Value;
+};
 
-typedef enum global_value_access_type{
-    PRIVATE_GLOVAL_VALUE_TYPE,
+enum global_value_access_type{
+    PRIVATE_GLOBAL_VALUE_TYPE,
     PUBLIC_GLOBAL_VALUE_TYPE,
-}GlobalValueAccessType;
+};
 
-typedef struct global_value{
+struct global_value{
     GlobalValueAccessType access;
-    Value value;
-}GlobalValue;
+    Value                 value;
+};
 
 #define VALUE_SIZE sizeof(Value)
 #define VALUE_TYPE(_value)((_value)->type)

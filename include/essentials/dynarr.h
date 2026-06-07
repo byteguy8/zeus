@@ -44,7 +44,7 @@ DynArr *dynarr_create_by(
     (dynarr_init((_dynarr), sizeof(_type), (_allocator)))
 
 #define DYNARR_CREATE_TYPE(_allocator, _type) \
-    (dynarr_create(_allocator, sizeof(_type)))
+    (dynarr_create((DynArrAllocator *)(_allocator), sizeof(_type)))
 
 #define DYNARR_CREATE_PTR(_allocator) \
     DYNARR_CREATE_TYPE((_allocator), uintptr_t)

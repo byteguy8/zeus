@@ -5,102 +5,100 @@
 
 #include "utils.h"
 #include "token.h"
+
 #include <stdint.h>
 #include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <math.h>
 
-#define COMPILE_ALLOCATOR       (lexer->ctallocator)
-#define COMPILE_ARENA_ALLOCATOR (lexer->ctarena_allocator)
-#define RUNTIME_ALLOCATOR       (lexer->rtallocator)
+#define CTALLOCATOR     (lexer->ctallocator)
+#define RTALLOCATOR     (lexer->rtallocator)
+#define LEXER_ALLOCATOR (lexer->lexer_allocator)
 //--------------------------------------------------------------------------//
 //                            PRIVATE INTERFACE                             //
 //--------------------------------------------------------------------------//
 static void error(Lexer *lexer, char *msg, ...);
 
-static inline int is_at_end(Lexer *lexer);
-static inline int is_dec_digit(char c);
-static inline int is_hex_digit(char c);
-static inline int is_alpha(char c);
-static inline int is_alpha_numeric(char c);
+static int is_at_end(Lexer *lexer);
+static int is_dec_digit(char c);
+static int is_hex_digit(char c);
+static int is_alpha(char c);
+static int is_alpha_numeric(char c);
 
-static inline char peek(Lexer *lexer);
-static int match(char c, Lexer *lexer);
+static char peek(Lexer *lexer);
+static int match(Lexer *lexer, char c);
 static char advance(Lexer *lexer);
 
 static char *copy_source_range(size_t start, size_t end, Lexer *lexer, size_t *out_len);
 static char *create_lexeme(char *lexeme, Lexer *lexer, size_t *out_len);
-static inline size_t current_lexeme_len(Lexer *lexer);
-static inline char *current_lexeme(Lexer *lexer, size_t *out_len);
-static inline void put_current_lexeme(char *buff, Lexer *lexer);
+static size_t current_lexeme_len(Lexer *lexer);
+static char *current_lexeme(Lexer *lexer, size_t *out_len);
+static void put_current_lexeme(Lexer *lexer, char *buff);
 
-static inline Token *create_token_raw(
+static Token *create_token_raw(
+    Lexer *lexer,
 	int line,
     TokType type,
     size_t lexeme_len,
     char *lexeme,
     size_t literal_size,
-    void *literal,
-    Lexer *lexer
+    void *literal
 );
-static inline Token *create_token_literal(
+static Token *create_token_literal(
+    Lexer *lexer,
 	TokType type,
     size_t literal_size,
-    void *literal,
-	Lexer *lexer
+    void *literal
 );
-static inline Token *create_token(TokType type, Lexer *lexer);
+static Token *create_token(Lexer *lexer, TokType type);
 #define ADD_TOKEN_RAW(_token)(dynarr_insert_ptr(lexer->tokens, (_token)))
 
 static void comment(Lexer *lexer);
 static Token *decimal(Lexer *lexer);
 static Token *identifier(Lexer *lexer);
-static int interpolation(DynArr *tokens, Lexer *lexer);
+static int string_placeholder(DynArr *tokens, Lexer *lexer);
 static Token *string(Lexer *lexer);
-static Token *scan_token(char c, Lexer *lexer);
+static Token *scan_token(Lexer *lexer, char c);
 //--------------------------------------------------------------------------//
 //                          PRIVATE IMPLEMENTATION                          //
 //--------------------------------------------------------------------------//
 void error(Lexer *lexer, char *msg, ...){
-	if(lexer->status == 0){
-		lexer->status = 1;
-	}
-
     va_list args;
-	va_start(args, msg);
-
     int line = lexer->line;
 
-	fprintf(stderr, "Lexer error at line %d:\n\t", line);
+	va_start(args, msg);
+
+	fprintf(stderr, "ERROR at line %d:\n\t", line);
 	vfprintf(stderr, msg, args);
     fprintf(stderr, "\n");
 
 	va_end(args);
 }
 
-static inline int is_at_end(Lexer *lexer){
+inline int is_at_end(Lexer *lexer){
     const DStr *source = lexer->source;
-    return lexer->current >= ((int)source->len);
+
+    return lexer->current >= source->len;
 }
 
-static inline int is_dec_digit(char c){
+inline int is_dec_digit(char c){
     return c >= '0' && c <= '9';
 }
 
-static inline int is_hex_digit(char c){
+inline int is_hex_digit(char c){
     return is_dec_digit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 
-static inline int is_alpha(char c){
+inline int is_alpha(char c){
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 
-static inline int is_alpha_numeric(char c){
+inline int is_alpha_numeric(char c){
     return is_dec_digit(c) || is_alpha(c);
 }
 
-static inline char peek(Lexer *lexer){
+inline char peek(Lexer *lexer){
     if(is_at_end(lexer)){
 		return '\0';
 	}
@@ -110,30 +108,21 @@ static inline char peek(Lexer *lexer){
     return source->buff[lexer->current];
 }
 
-static inline char peek_at(uint16_t offset, Lexer *lexer){
+int match(Lexer *lexer, char c){
     if(is_at_end(lexer)){
-		return '\0';
-	}
-
-    const DStr *source = lexer->source;
-
-    return source->buff[(size_t)offset];
-}
-
-int match(char c, Lexer *lexer){
-    if(is_at_end(lexer)){
-		return '\0';
-	}
-
-    const DStr *source = lexer->source;
-    char cc = source->buff[lexer->current];
-
-    if(c != cc){
 		return 0;
 	}
 
-    lexer->current++;
-    return 1;
+    const DStr *source = lexer->source;
+    char current_c = source->buff[lexer->current];
+
+    if(c == current_c){
+        lexer->current++;
+
+        return 1;
+	}
+
+    return 0;
 }
 
 char advance(Lexer *lexer){
@@ -147,13 +136,13 @@ char advance(Lexer *lexer){
 }
 
 // the output str is valid only during compilation allocated
-static char *copy_source_range(size_t start, size_t end, Lexer *lexer, size_t *out_len){
+char *copy_source_range(size_t start, size_t end, Lexer *lexer, size_t *out_len){
     const DStr *source = lexer->source;
 
     assert(end > start && (size_t)end <= source->len);
 
     size_t lexeme_len = end - start;
-    char *lexeme = MEMORY_ALLOC(lexer->rtallocator, char, lexeme_len + 1);
+    char *lexeme = MEMORY_ALLOC(CTALLOCATOR, char, lexeme_len + 1);
 
     memcpy(lexeme, source->buff + (size_t)start, lexeme_len);
     lexeme[lexeme_len] = '\0';
@@ -165,9 +154,9 @@ static char *copy_source_range(size_t start, size_t end, Lexer *lexer, size_t *o
     return lexeme;
 }
 
-static char *create_lexeme(char *lexeme, Lexer *lexer, size_t *out_len){
+char *create_lexeme(char *lexeme, Lexer *lexer, size_t *out_len){
     size_t lexeme_len = strlen(lexeme);
-    char *new_lexeme = MEMORY_ALLOC(COMPILE_ALLOCATOR, char, lexeme_len + 1);
+    char *new_lexeme = MEMORY_ALLOC(CTALLOCATOR, char, lexeme_len + 1);
 
     memcpy(new_lexeme, lexeme, lexeme_len);
     new_lexeme[lexeme_len] = 0;
@@ -179,32 +168,33 @@ static char *create_lexeme(char *lexeme, Lexer *lexer, size_t *out_len){
     return new_lexeme;
 }
 
-static inline size_t current_lexeme_len(Lexer *lexer){
+inline size_t current_lexeme_len(Lexer *lexer){
     return (size_t)(lexer->current - lexer->start);
 }
 
-static inline char *current_lexeme(Lexer *lexer, size_t *out_len){
+inline char *current_lexeme(Lexer *lexer, size_t *out_len){
     return copy_source_range(lexer->start, lexer->current, lexer, out_len);
 }
 
-static inline void put_current_lexeme(char *buff, Lexer *lexer){
+inline void put_current_lexeme(Lexer *lexer, char *buff){
     size_t start = lexer->start;
     size_t current = lexer->current;
     size_t len = current - start;
     const DStr *source = lexer->source;
 
     memcpy(buff, source->buff + start, len);
+
     buff[len] = 0;
 }
 
-static inline Token *create_token_raw(
+inline Token *create_token_raw(
+    Lexer *lexer,
 	int line,
     TokType type,
     size_t lexeme_len,
     char *lexeme,
     size_t literal_size,
-    void *literal,
-    Lexer *lexer
+    void *literal
 ){
     Token *token = MEMORY_ALLOC(lexer->rtallocator, Token, 1);
 
@@ -220,35 +210,36 @@ static inline Token *create_token_raw(
     return token;
 }
 
-static inline Token *create_token_literal(
+inline Token *create_token_literal(
+    Lexer *lexer,
 	TokType type,
     size_t literal_size,
-    void *literal,
-	Lexer *lexer
+    void *literal
 ){
     size_t lexeme_len;
 	char *lexeme = current_lexeme(lexer, &lexeme_len);
 
 	return create_token_raw(
+        lexer,
         lexer->line,
         type,
         lexeme_len,
         lexeme,
         literal_size,
-        literal,
-        lexer
+        literal
     );
 }
 
-static inline Token *create_token(TokType type, Lexer *lexer){
-	return create_token_literal(type, 0, NULL, lexer);
+inline Token *create_token(Lexer *lexer, TokType type){
+	return create_token_literal(lexer, type, 0, NULL);
 }
 
 void comment(Lexer *lexer){
 	while(!is_at_end(lexer)){
 		if(advance(lexer) == '\n'){
 			lexer->line++;
-			break;
+
+            break;
 		}
 	}
 }
@@ -260,7 +251,7 @@ Token *decimal(Lexer *lexer){
         advance(lexer);
     }
 
-	if(match('.', lexer)){
+	if(match(lexer, '.')){
         if(!is_dec_digit(peek(lexer))){
             error(lexer, "Expect digit after decimal point");
             return NULL;
@@ -281,26 +272,26 @@ Token *decimal(Lexer *lexer){
         utils_decimal_str_to_i64(lexeme, value);
 
 		return create_token_raw(
+            lexer,
 			lexer->line,
             type,
             lexeme_len,
 			lexeme,
             sizeof(int64_t),
-			value,
-			lexer
+			value
 		);
 	}else{
         double *value = MEMORY_ALLOC(lexer->rtallocator, double, 1);
         utils_str_to_double(lexeme, value);
 
         return create_token_raw(
+            lexer,
 			lexer->line,
             type,
             lexeme_len,
 			lexeme,
             sizeof(double),
-			value,
-			lexer
+			value
 		);
 	}
 }
@@ -328,13 +319,13 @@ Token *hexadecimal(Lexer *lexer){
     utils_hexadecimal_str_to_i64(lexeme, value);
 
     return create_token_raw(
+        lexer,
         lexer->line,
         INT_TYPE_TOKTYPE,
         lexeme_len,
         lexeme,
         sizeof(int64_t),
-        value,
-        lexer
+        value
     );
 }
 
@@ -347,142 +338,156 @@ Token *identifier(Lexer *lexer){
     char lexeme[lexeme_len + 1];
     TokType *type = NULL;
 
-    put_current_lexeme(lexeme, lexer);
+    put_current_lexeme(lexer, lexeme);
     lzohtable_lookup(lexeme_len, lexeme, (LZOHTable *)lexer->keywords, (void **)(&type));
 
     if(type){
-        return create_token(*type, lexer);
+        return create_token(lexer, *type);
     }
 
-    return create_token(IDENTIFIER_TOKTYPE, lexer);
+    return create_token(lexer, IDENTIFIER_TOKTYPE);
 }
 
-int interpolation(DynArr *tokens, Lexer *lexer){
+int string_placeholder(DynArr *tokens, Lexer *lexer){
     while (!is_at_end(lexer) && peek(lexer) != '}'){
         char c = advance(lexer);
         Token *token = NULL;
 
         switch (c){
             case '?':{
-                token = create_token(QUESTION_MARK_TOKTYPE, lexer);
+                token = create_token(lexer, QUESTION_MARK_TOKTYPE);
+
                 break;
             }case ':':{
-                token = create_token(COLON_TOKTYPE, lexer);
+                token = create_token(lexer, COLON_TOKTYPE);
+
                 break;
             }case '[':{
-                token = create_token(LEFT_SQUARE_TOKTYPE, lexer);
+                token = create_token(lexer, LEFT_SQUARE_TOKTYPE);
+
                 break;
             }case ']':{
-                token = create_token(RIGHT_SQUARE_TOKTYPE, lexer);
+                token = create_token(lexer, RIGHT_SQUARE_TOKTYPE);
+
                 break;
             }case '(':{
-                token = create_token(LEFT_PAREN_TOKTYPE, lexer);
+                token = create_token(lexer, LEFT_PAREN_TOKTYPE);
+
                 break;
             }case ')':{
-                token = create_token(RIGHT_PAREN_TOKTYPE, lexer);
+                token = create_token(lexer, RIGHT_PAREN_TOKTYPE);
+
                 break;
             }case '{':{
-                token = create_token(LEFT_BRACKET_TOKTYPE, lexer);
+                token = create_token(lexer, LEFT_BRACKET_TOKTYPE);
+
                 break;
             }case '}':{
-                token = create_token(RIGHT_BRACKET_TOKTYPE, lexer);
+                token = create_token(lexer, RIGHT_BRACKET_TOKTYPE);
+
                 break;
             }case '~':{
-                token = create_token(NOT_BITWISE_TOKTYPE, lexer);
+                token = create_token(lexer, NOT_BITWISE_TOKTYPE);
+
                 break;
             }case '&':{
-                token = create_token(AND_BITWISE_TOKTYPE, lexer);
+                token = create_token(lexer, AND_BITWISE_TOKTYPE);
+
                 break;
             }case '^':{
-                token = create_token(XOR_BITWISE_TOKTYPE, lexer);
+                token = create_token(lexer, XOR_BITWISE_TOKTYPE);
+
                 break;
             }case '|':{
-                token = create_token(OR_BITWISE_TOKTYPE, lexer);
+                token = create_token(lexer, OR_BITWISE_TOKTYPE);
+
                 break;
             }case ',':{
-                token = create_token(COMMA_TOKTYPE, lexer);
+                token = create_token(lexer, COMMA_TOKTYPE);
+
                 break;
             }case '.':{
-                if(match('.', lexer)){
-                    token = create_token(DOUBLE_DOT_TOKTYPE, lexer);
+                if(match(lexer, '.')){
+                    token = create_token(lexer, DOUBLE_DOT_TOKTYPE);
                 }else{
-                    token = create_token(DOT_TOKTYPE, lexer);
+                    token = create_token(lexer, DOT_TOKTYPE);
                 }
 
                 break;
             }case '+':{
-                if(match('=', lexer)){
-                    token = create_token(COMPOUND_ADD_TOKTYPE, lexer);
+                if(match(lexer, '=')){
+                    token = create_token(lexer, COMPOUND_ADD_TOKTYPE);
                 }else{
-                    token = create_token(PLUS_TOKTYPE, lexer);
+                    token = create_token(lexer, PLUS_TOKTYPE);
                 }
 
                 break;
             }case '-':{
-                if(match('=', lexer)){
-                    token = create_token(COMPOUND_SUB_TOKTYPE, lexer);
+                if(match(lexer, '=')){
+                    token = create_token(lexer, COMPOUND_SUB_TOKTYPE);
                 }else{
-                    token = create_token(MINUS_TOKTYPE, lexer);
+                    token = create_token(lexer, MINUS_TOKTYPE);
                 }
 
                 break;
             }case '*':{
-                if(match('*', lexer)){
-                    token = create_token(DOUBLE_ASTERISK_TOKTYPE, lexer);
-                }else if(match('=', lexer)){
-                    token = create_token(COMPOUND_MUL_TOKTYPE, lexer);
+                if(match(lexer, '*')){
+                    token = create_token(lexer, DOUBLE_ASTERISK_TOKTYPE);
+                }else if(match(lexer, '=')){
+                    token = create_token(lexer, COMPOUND_MUL_TOKTYPE);
                 }else{
-                    token = create_token(ASTERISK_TOKTYPE, lexer);
+                    token = create_token(lexer, ASTERISK_TOKTYPE);
                 }
 
                 break;
             }case '/':{
-                if(match('=', lexer)){
-                    token = create_token(COMPOUND_DIV_TOKTYPE, lexer);
+                if(match(lexer, '=')){
+                    token = create_token(lexer, COMPOUND_DIV_TOKTYPE);
                 }else{
-                    token = create_token(SLASH_TOKTYPE, lexer);
+                    token = create_token(lexer, SLASH_TOKTYPE);
                 }
 
                 break;
             }case '<':{
-                if(match('<', lexer)){
-                    token = create_token(LEFT_SHIFT_TOKTYPE, lexer);
-                }else if(match('=', lexer)){
-                    token = create_token(LESS_EQUALS_TOKTYPE, lexer);
+                if(match(lexer, '<')){
+                    token = create_token(lexer, LEFT_SHIFT_TOKTYPE);
+                }else if(match(lexer, '=')){
+                    token = create_token(lexer, LESS_EQUALS_TOKTYPE);
                 }else{
-                    token = create_token(LESS_TOKTYPE, lexer);
+                    token = create_token(lexer, LESS_TOKTYPE);
                 }
 
                 break;
             }case '>':{
-                if(match('>', lexer)){
-                    token = create_token(RIGHT_SHIFT_TOKTYPE, lexer);
-                }else if(match('=', lexer)){
-                    token = create_token(GREATER_EQUALS_TOKTYPE, lexer);
+                if(match(lexer, '>')){
+                    token = create_token(lexer, RIGHT_SHIFT_TOKTYPE);
+                }else if(match(lexer, '=')){
+                    token = create_token(lexer, GREATER_EQUALS_TOKTYPE);
                 }else{
-                    token = create_token(GREATER_TOKTYPE, lexer);
+                    token = create_token(lexer, GREATER_TOKTYPE);
                 }
 
                 break;
             }case '=':{
-                if(match('=', lexer)){
-                    token = create_token(EQUALS_EQUALS_TOKTYPE, lexer);
+                if(match(lexer, '=')){
+                    token = create_token(lexer, EQUALS_EQUALS_TOKTYPE);
                 }
 
                 break;
             }case '!':{
-                if(match('=', lexer)){
-                    token = create_token(NOT_EQUALS_TOKTYPE, lexer);
+                if(match(lexer, '=')){
+                    token = create_token(lexer, NOT_EQUALS_TOKTYPE);
                 }else{
-                    token = create_token(EXCLAMATION_TOKTYPE, lexer);
+                    token = create_token(lexer, EXCLAMATION_TOKTYPE);
                 }
 
                 break;
             }case ' ':{
                 lexer->start = lexer->current;
+
                 continue;
             }default:{
-                if(is_dec_digit(c) && (match('x', lexer) || match('X', lexer))){
+                if(is_dec_digit(c) && (match(lexer, 'x') || match(lexer, 'X'))){
                     token = hexadecimal(lexer);
                 }else if(is_dec_digit(c)){
                     token = decimal(lexer);
@@ -491,7 +496,8 @@ int interpolation(DynArr *tokens, Lexer *lexer){
                 }else if(c == '"'){
                     token = string(lexer);
                 }else{
-                    error(lexer, "Unknown token '%c':%d", c, c);
+                    error(lexer, "Unknown token inside placeholder: '%c'", c);
+
                     return 1;
                 }
             }
@@ -499,283 +505,315 @@ int interpolation(DynArr *tokens, Lexer *lexer){
 
         if(token){
             dynarr_insert_ptr(tokens, token);
+
             lexer->start = lexer->current;
+
             continue;
         }
 
-        error(lexer, "Failed to process string interpolation");
-
         return 1;
     }
-
-    if(peek(lexer) != '}'){
-        error(lexer, "Unclosed string interpolation");
-        return 1;
-    }
-
-    advance(lexer);
 
     return 0;
 }
 
 Token *string(Lexer *lexer){
-    int start = lexer->start;
-    size_t from_inner = 0;
-    int from_outer = lexer->current;
-    DynArr *template_tokens = NULL;
-    LZBStr *str_helper = MEMORY_LZBSTR(COMPILE_ARENA_ALLOCATOR);
+    DynArr *str_tokens = NULL;
+    LZBStr *str_helper = MEMORY_LZBSTR(LEXER_ALLOCATOR);
+
+    lzbstr_grow_by(str_helper, 1024);
 
     while(!is_at_end(lexer) && peek(lexer) != '"'){
         char c = advance(lexer);
 
+        if(c != '{' && c != '\\'){
+            lzbstr_append(str_helper, (char[]){c, 0});
+
+            continue;
+        }
+
         if(c == '{'){
-            if(!template_tokens){
-                template_tokens = MEMORY_DYNARR_PTR(COMPILE_ALLOCATOR);
-            }
-
-            if(lexer->current - 1 > from_outer){
-                size_t lexeme_len;
-                char *lexeme = copy_source_range(
-                    (size_t)from_outer,
-                    lexer->current - 1,
-                    lexer,
-                    &lexeme_len
-                );
-
-                size_t to = LZBSTR_LEN(str_helper);
-
-                size_t buff_len;
-                char *buff = lzbstr_rclone_buff_rng(
-                    from_inner,
-                    to,
-                    (LZBStrAllocator *)RUNTIME_ALLOCATOR,
-                    str_helper,
-                    &buff_len
-                );
-
-                Token *token = create_token_raw(
-                    lexer->line,
-                    STR_TYPE_TOKTYPE,
-                    lexeme_len,
-                    lexeme,
-                    buff_len,
-                    buff,
-                    lexer
-                );
-
-                dynarr_insert_ptr(template_tokens, token);
-
-                from_inner = to;
-            }
-
             lexer->start = lexer->current;
 
-            if(interpolation(template_tokens, lexer)){
-                return NULL;
+            if(!str_tokens){
+                str_tokens = MEMORY_DYNARR_PTR(CTALLOCATOR);
             }
 
-            from_outer = lexer->current;
+            size_t lexeme_len = 0;
+            char *lexeme = NULL;
+            size_t literal_size = 0;
+            char *literal = NULL;
 
-            continue;
-        }
+            lzbstr_insert_args(str_helper, 0, "\"");
+            lzbstr_append(str_helper, "\"");
 
-        if(c != '\\'){
-            lzbstr_append((char[]){c, 0}, str_helper);
-            continue;
-        }
-
-        switch (advance(lexer)){
-            case 't':{
-                lzbstr_append((char[]){'\t', 0}, str_helper);
-                break;
-            }case 'n':{
-                lzbstr_append((char[]){'\n', 0}, str_helper);
-                break;
-            }case 'r':{
-                lzbstr_append((char[]){'\r', 0}, str_helper);
-                break;
-            }case '"':{
-                lzbstr_append((char[]){'"', 0}, str_helper);
-                break;
-            }case '{':{
-                lzbstr_append((char[]){'{', 0}, str_helper);
-                break;
-            }case '\\':{
-                lzbstr_append((char[]){'\\', 0}, str_helper);
-                break;
-            }default:{
-                error(lexer, "Unknown espace sequence: \\%c", peek(lexer));
-                return NULL;
-            }
-        }
-    }
-
-    if(peek(lexer) != '"'){
-        error(lexer, "Unterminated string");
-        return NULL;
-    }
-
-    advance(lexer);
-
-    if(template_tokens){
-        lexer->start = start;
-
-        if(from_inner < LZBSTR_LEN(str_helper)){
-            size_t lexeme_len;
-            char *lexeme = copy_source_range(
-                (size_t)from_outer,
-                lexer->current - 1,
-                lexer,
-                &lexeme_len
-            );
-
-            size_t to = LZBSTR_LEN(str_helper);
-
-            size_t buff_len;
-            char *buff = lzbstr_rclone_buff_rng(
-                from_inner,
-                to,
-                (LZBStrAllocator *)RUNTIME_ALLOCATOR,
+            lzbstr_rclone_buff(
                 str_helper,
-                &buff_len
+                (LZBStrAllocator *)CTALLOCATOR,
+                &lexeme_len,
+                &lexeme
             );
 
-            Token *token = create_token_raw(
+            if(lzbstr_len(str_helper) == 2){
+                literal_size = 0;
+                literal = MEMORY_ALLOC(RTALLOCATOR, char, 1);
+                literal[0] = 0;
+            }else{
+                lzbstr_rclone_buff_rng(
+                    str_helper,
+                    (LZBStrAllocator *)RTALLOCATOR,
+                    1,
+                    lzbstr_len(str_helper) - 2,
+                    &literal_size,
+                    &literal
+                );
+            }
+
+            lzbstr_reset(str_helper);
+
+            Token *str_token = create_token_raw(
+                lexer,
                 lexer->line,
                 STR_TYPE_TOKTYPE,
                 lexeme_len,
                 lexeme,
-                buff_len,
-                buff,
-                lexer
+                literal_size,
+                literal
             );
 
-            dynarr_insert_ptr(template_tokens, token);
+            dynarr_insert_ptr(str_tokens, str_token);
+
+            if(string_placeholder(str_tokens, lexer)){
+                return NULL;
+            }
+
+            if(!match(lexer, '}')){
+                error(lexer, "Unclosed placeholder");
+            }
+
+            continue;
+        }
+
+        if(c == '\\'){
+            char espace = advance(lexer);
+
+            switch (espace){
+                case 't':{
+                    lzbstr_append(str_helper, (char[]){'\t', 0});
+
+                    break;
+                }case 'n':{
+                    lzbstr_append(str_helper, (char[]){'\n', 0});
+
+                    break;
+                }case 'r':{
+                    lzbstr_append(str_helper, (char[]){'\r', 0});
+
+                    break;
+                }case '"':{
+                    lzbstr_append(str_helper, (char[]){'"', 0});
+
+                    break;
+                }case '{':{
+                    lzbstr_append(str_helper, (char[]){'{', 0});
+
+                    break;
+                }case '\\':{
+                    lzbstr_append(str_helper, (char[]){'\\', 0});
+
+                    break;
+                }default:{
+                    error(lexer, "Unknown espace sequence: \\%c", espace);
+
+                    return NULL;
+                }
+            }
+        }
+    }
+
+    if(!match(lexer, '"')){
+        error(lexer, "Unterminated string literal");
+
+        return NULL;
+    }
+
+    if(str_tokens){
+        if(lzbstr_len(str_helper) > 0){
+            size_t lexeme_len;
+            char *lexeme;
+            size_t literal_size;
+            char *literal;
+
+            lzbstr_insert_args(str_helper, 0, "\"");
+            lzbstr_append(str_helper, "\"");
+
+            lzbstr_rclone_buff(
+                str_helper,
+                (LZBStrAllocator *)CTALLOCATOR,
+                &lexeme_len,
+                &lexeme
+            );
+
+            lzbstr_rclone_buff_rng(
+                str_helper,
+                (LZBStrAllocator *)RTALLOCATOR,
+                1,
+                lzbstr_len(str_helper) - 2,
+                &literal_size,
+                &literal
+            );
+
+            Token *token = create_token_raw(
+                lexer,
+                lexer->line,
+                STR_TYPE_TOKTYPE,
+                lexeme_len,
+                lexeme,
+                literal_size,
+                literal
+            );
+
+            dynarr_insert_ptr(str_tokens, token);
         }
 
         size_t lexeme_len;
         char *lexeme = create_lexeme("EOF", lexer, &lexeme_len);
-        Token *token = create_token_raw(-1, EOF_TOKTYPE, lexeme_len, lexeme, 0, NULL, lexer);
+        Token *eof_token = create_token_raw(
+            lexer,
+            lexer->line,
+            EOF_TOKTYPE,
+            lexeme_len,
+            lexeme,
+            0,
+            NULL
+        );
 
-        dynarr_insert_ptr(template_tokens, token);
+        dynarr_insert_ptr(str_tokens, eof_token);
 
         return create_token_literal(
+            lexer,
             TEMPLATE_TYPE_TOKTYPE,
             sizeof(DynArr *),
-            template_tokens,
-            lexer
+            str_tokens
         );
     }
 
     size_t literal_size;
-    char *literal;
+    char *literal = NULL;
 
-    if(LZBSTR_LEN(str_helper) == 0){
+    if(lzbstr_len(str_helper) == 0){
         literal_size = 0;
-        literal = MEMORY_ALLOC(RUNTIME_ALLOCATOR, char, 1);
+        literal = MEMORY_ALLOC(RTALLOCATOR, char, 1);
         literal[0] = 0;
     }else{
-        literal = lzbstr_rclone_buff((LZBStrAllocator *)RUNTIME_ALLOCATOR, str_helper, &literal_size);
+        lzbstr_rclone_buff(
+            str_helper,
+            (LZBStrAllocator *)RTALLOCATOR,
+            &literal_size,
+            &literal
+        );
     }
 
-    return create_token_literal(STR_TYPE_TOKTYPE, literal_size, literal, lexer);
+    return create_token_literal(lexer, STR_TYPE_TOKTYPE, literal_size, literal);
 }
 
-Token *scan_token(char c, Lexer *lexer){
+Token *scan_token(Lexer *lexer, char c){
     switch (c){
         case '?':{
-        	return create_token(QUESTION_MARK_TOKTYPE, lexer);
+        	return create_token(lexer, QUESTION_MARK_TOKTYPE);
         }case ':':{
-			return create_token(COLON_TOKTYPE, lexer);
+			return create_token(lexer, COLON_TOKTYPE);
 		}case ';':{
-            return create_token(SEMICOLON_TOKTYPE, lexer);
+            return create_token(lexer, SEMICOLON_TOKTYPE);
         }case '[':{
-            return create_token(LEFT_SQUARE_TOKTYPE, lexer);
+            return create_token(lexer, LEFT_SQUARE_TOKTYPE);
         }case ']':{
-            return create_token(RIGHT_SQUARE_TOKTYPE, lexer);
+            return create_token(lexer, RIGHT_SQUARE_TOKTYPE);
         }case '(':{
-            return create_token(LEFT_PAREN_TOKTYPE, lexer);
+            return create_token(lexer, LEFT_PAREN_TOKTYPE);
         }case ')':{
-            return create_token(RIGHT_PAREN_TOKTYPE, lexer);
+            return create_token(lexer, RIGHT_PAREN_TOKTYPE);
         }case '{':{
-            return create_token(LEFT_BRACKET_TOKTYPE, lexer);
+            return create_token(lexer, LEFT_BRACKET_TOKTYPE);
         }case '}':{
-            return create_token(RIGHT_BRACKET_TOKTYPE, lexer);
+            return create_token(lexer, RIGHT_BRACKET_TOKTYPE);
         }case '~':{
-            return create_token(NOT_BITWISE_TOKTYPE, lexer);
+            return create_token(lexer, NOT_BITWISE_TOKTYPE);
         }case '&':{
-            return create_token(AND_BITWISE_TOKTYPE, lexer);
+            return create_token(lexer, AND_BITWISE_TOKTYPE);
         }case '^':{
-            return create_token(XOR_BITWISE_TOKTYPE, lexer);
+            return create_token(lexer, XOR_BITWISE_TOKTYPE);
         }case '|':{
-            return create_token(OR_BITWISE_TOKTYPE, lexer);
+            return create_token(lexer, OR_BITWISE_TOKTYPE);
         }case ',':{
-			return create_token(COMMA_TOKTYPE, lexer);
+			return create_token(lexer, COMMA_TOKTYPE);
 		}case '.':{
-            if(match('.', lexer)){
-                return create_token(DOUBLE_DOT_TOKTYPE, lexer);
+            if(match(lexer, '.')){
+                return create_token(lexer, DOUBLE_DOT_TOKTYPE);
             }else{
-                return create_token(DOT_TOKTYPE, lexer);
+                return create_token(lexer, DOT_TOKTYPE);
             }
 		}case '+':{
-			if(match('=', lexer)){
-				return create_token(COMPOUND_ADD_TOKTYPE, lexer);
+			if(match(lexer, '=')){
+				return create_token(lexer, COMPOUND_ADD_TOKTYPE);
 			}else{
-				return create_token(PLUS_TOKTYPE, lexer);
+				return create_token(lexer, PLUS_TOKTYPE);
 			}
         }case '-':{
-			if(match('=', lexer)){
-				return create_token(COMPOUND_SUB_TOKTYPE, lexer);
+			if(match(lexer, '=')){
+				return create_token(lexer, COMPOUND_SUB_TOKTYPE);
 			}else{
-				return create_token(MINUS_TOKTYPE, lexer);
+				return create_token(lexer, MINUS_TOKTYPE);
 			}
         }case '*':{
-			if(match('*', lexer)){
-                return create_token(DOUBLE_ASTERISK_TOKTYPE, lexer);
-            }else if(match('=', lexer)){
-				return create_token(COMPOUND_MUL_TOKTYPE, lexer);
+			if(match(lexer, '*')){
+                return create_token(lexer, DOUBLE_ASTERISK_TOKTYPE);
+            }else if(match(lexer, '=')){
+				return create_token(lexer, COMPOUND_MUL_TOKTYPE);
 			}else{
-				return create_token(ASTERISK_TOKTYPE, lexer);
+				return create_token(lexer, ASTERISK_TOKTYPE);
 			}
         }case '/':{
-			if(match('/', lexer)){
+			if(match(lexer, '/')){
 				comment(lexer);
-				return NULL;
-			}else if(match('=', lexer)){
-				return create_token(COMPOUND_DIV_TOKTYPE, lexer);
+
+                return NULL;
+			}else if(match(lexer, '=')){
+				return create_token(lexer, COMPOUND_DIV_TOKTYPE);
 			}else{
-				return create_token(SLASH_TOKTYPE, lexer);
+				return create_token(lexer, SLASH_TOKTYPE);
 			}
         }case '<':{
-            if(match('<', lexer)){
-                return create_token(LEFT_SHIFT_TOKTYPE, lexer);
-            }else if(match('=', lexer)){
-				return create_token(LESS_EQUALS_TOKTYPE, lexer);
+            if(match(lexer, '<')){
+                return create_token(lexer, LEFT_SHIFT_TOKTYPE);
+            }else if(match(lexer, '=')){
+				return create_token(lexer, LESS_EQUALS_TOKTYPE);
 			}else{
-				return create_token(LESS_TOKTYPE, lexer);
+				return create_token(lexer, LESS_TOKTYPE);
 			}
         }case '>':{
-            if(match('>', lexer)){
-                return create_token(RIGHT_SHIFT_TOKTYPE, lexer);
-            }else if(match('=', lexer)){
-				return create_token(GREATER_EQUALS_TOKTYPE, lexer);
+            if(match(lexer, '>')){
+                return create_token(lexer, RIGHT_SHIFT_TOKTYPE);
+            }else if(match(lexer, '=')){
+				return create_token(lexer, GREATER_EQUALS_TOKTYPE);
 			}else{
-				return create_token(GREATER_TOKTYPE, lexer);
+				return create_token(lexer, GREATER_TOKTYPE);
 			}
         }case '=':{
-            if(match('=', lexer)){
-				return create_token(EQUALS_EQUALS_TOKTYPE, lexer);
+            if(match(lexer, '=')){
+				return create_token(lexer, EQUALS_EQUALS_TOKTYPE);
 			}else{
-				return create_token(EQUALS_TOKTYPE, lexer);
+				return create_token(lexer, EQUALS_TOKTYPE);
 			}
         }case '!':{
-            if(match('=', lexer)){
-				return create_token(NOT_EQUALS_TOKTYPE, lexer);
+            if(match(lexer, '=')){
+				return create_token(lexer, NOT_EQUALS_TOKTYPE);
 			}else{
-				return create_token(EXCLAMATION_TOKTYPE, lexer);
+				return create_token(lexer, EXCLAMATION_TOKTYPE);
 			}
         }case '\n':{
             lexer->line++;
+
             return NULL;
         }case ' ':
          case '\r':
@@ -783,17 +821,20 @@ Token *scan_token(char c, Lexer *lexer){
          case '\0':{
             return NULL;
         }default:{
-            if(is_dec_digit(c) && (match('x', lexer) || match('X', lexer))){
-                return hexadecimal(lexer);
-            }else if(is_dec_digit(c)){
-				return decimal(lexer);
-			}else if(is_alpha_numeric(c)){
+            if(is_dec_digit(c)){
+                if((match(lexer, 'x') || match(lexer, 'X'))){
+                    return hexadecimal(lexer);
+                }
+
+                return decimal(lexer);
+            }else if(is_alpha_numeric(c)){
 				return identifier(lexer);
 			}else if(c == '"'){
 				return string(lexer);
 			}else{
 				error(lexer, "Unknown token '%c':%d", c, c);
-				return NULL;
+
+                return NULL;
 			}
         }
     }
@@ -817,19 +858,16 @@ Lexer *lexer_create(const Allocator *ctallocator, const Allocator *rtallocator){
     return lexer;
 }
 
-int lexer_scan(
-	const DStr *source,
-	DynArr *tokens,
-	const LZOHTable *keywords,
+int lexer_lex(
+    Lexer *lexer,
+    const DStr *source,
     const char *pathname,
-	Lexer *lexer
+    const LZOHTable *keywords,
+    DynArr *tokens
 ){
     if(setjmp(lexer->err_buf) == 0){
-    	LZArena *ctarena = NULL;
-  		Allocator *ctarena_allocator = memory_arena_allocator(
-    		COMPILE_ALLOCATOR,
-      		&ctarena
-    	);
+    	LZArena *lexer_arena = NULL;
+  		Allocator *lexer_arena_allocator = memory_arena_allocator(CTALLOCATOR, &lexer_arena);
 
     	lexer->line = 1;
         lexer->start = 0;
@@ -838,12 +876,11 @@ int lexer_scan(
         lexer->tokens = tokens;
         lexer->keywords = keywords;
         lexer->pathname = pathname;
-        lexer->ctarena = ctarena;
-        lexer->ctarena_allocator = ctarena_allocator;
+        lexer->lexer_allocator = lexer_arena_allocator;
 
         while (!is_at_end(lexer)){
             char c = advance(lexer);
-            Token *token = scan_token(c, lexer);
+            Token *token = scan_token(lexer, c);
 
             if(token){
                 ADD_TOKEN_RAW(token);
@@ -851,8 +888,8 @@ int lexer_scan(
 
             lexer->start = lexer->current;
 
-            if(lzarena_used_memory(ctarena) > 0){
-            	lzarena_free_all(ctarena);
+            if(lzarena_used_memory(lexer_arena) > 0){
+            	lzarena_free_all(lexer_arena);
             }
         }
 
@@ -861,18 +898,18 @@ int lexer_scan(
 
         ADD_TOKEN_RAW(
         	create_token_raw(
+                lexer,
          		-1,
            		EOF_TOKTYPE,
              	lexeme_len,
               	lexeme,
                	0,
-                NULL,
-                lexer
+                NULL
          	)
         );
-        memory_destroy_arena_allocator(ctarena_allocator);
+        memory_destroy_arena_allocator(lexer_arena_allocator);
 
-        return lexer->status;
+        return 0;
     }else{
         return 1;
     }

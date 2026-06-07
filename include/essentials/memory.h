@@ -1,9 +1,11 @@
 #ifndef MEMORY_H
 #define MEMORY_H
 
+#include "lzbstr.h"
 #include "dynarr.h"
 #include "lzohtable.h"
 #include "lzarena.h"
+#include "lzpool.h"
 #include "lzflist.h"
 
 #include <stddef.h>
@@ -13,7 +15,6 @@ typedef struct allocator{
     void *(*alloc)(size_t size, void *ctx);
     void *(*realloc)(void *ptr, size_t old_size, size_t new_size, void *ctx);
     void (*dealloc)(void *ptr, size_t size, void *ctx);
-    void *extra;
 }Allocator;
 
 typedef struct complex_context{
@@ -29,7 +30,6 @@ typedef struct complex_context{
     (_allocator)->alloc   = (_alloc);                                        \
     (_allocator)->realloc = (_realloc);                                      \
     (_allocator)->dealloc = (_dealloc);                                      \
-    (_allocator)->extra   = NULL;                                            \
 }
 
 #define MEMORY_CHECK(_allocation)                                  if(!(_allocation)) goto ERROR
@@ -45,7 +45,7 @@ typedef struct complex_context{
 #define MEMORY_LZOHTABLE(_allocator)                               (lzohtable_create(64, 0.8, (LZOHTableAllocator *)(_allocator)))
 #define MEMORY_LZOHTABLE_LEN(_allocator, _len)                     (lzohtable_create((_len), 0.8, (LZOHTableAllocator *)(_allocator)))
 #define MEMORY_LZARENA(_allocator)                                 (lzarena_create((LZArenaAllocator *)(_allocator)))
-#define MEMORY_LZPOOL(_allocator, _type)                           (lzpool_create(sizeof(_type), (LZPoolAllocator *)(_allocator)))
+#define MEMORY_LZPOOL(_allocator, _type)                           (lzpool_create((LZPoolAllocator *)(_allocator), sizeof(_type)))
 
 char *memory_clone_cstr(const Allocator *allocator, const char *cstr, size_t *out_len);
 void memory_destroy_cstr(const Allocator *allocator, char *cstr);

@@ -4,25 +4,22 @@
 #include "essentials/memory.h"
 #include "essentials/dynarr.h"
 
-#include "module.h"
-
-#define NAME_LEN 256
+#include "vm_types.h"
 
 typedef struct opcode_location{
 	size_t offset;
-	int line;
-    char *filepath;
-}OPCodeLocation;
+	int    line;
+    char   *filepath;
+}OpCodeInfo;
 
-typedef struct fn{
-    uint8_t arity;
-    char *name;
-    DynArr *chunks;
-    DynArr *iconsts;
-    DynArr *fconsts;
-    DynArr *locations;
-    Module *module;
-    const Allocator *allocator;
-}Fn;
+struct fn{
+    uint8_t         arity;
+    char            *name;
+    DynArr          *chunks;
+    DynArr          *iconsts;
+    DynArr          *fconsts;
+    DynArr          *locations;
+    Module          *module;
+};
 
 #endif

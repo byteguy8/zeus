@@ -3,6 +3,7 @@
 #include "utils.h"
 
 #include "token.h"
+#include "stmt.h"
 #include "lexer.h"
 #include "parser.h"
 #include "compiler.h"
@@ -12,7 +13,7 @@
 #include "native_module/native_module_default.h"
 
 #include "vm/vm_factory.h"
-#include "vm/vmu.h"
+#include "vm/vm_utils.h"
 #include "vm/vm.h"
 
 #include <stdio.h>
@@ -46,7 +47,7 @@ void *lzalloc_link_flist(size_t size, void *ctx){
     void *ptr = lzflist_alloc(ctx, size);
 
     if(!ptr){
-        fprintf(stderr, "It seems the system ran out of memory");
+        fprintf(stderr, "It seems the system ran out of memory\n");
         lzflist_destroy(allocator);
         exit(EXIT_FAILURE);
     }
@@ -58,7 +59,7 @@ void *lzrealloc_link_flist(void *ptr, size_t old_size, size_t new_size, void *ct
     void *new_ptr = lzflist_realloc(ctx, ptr, new_size);
 
     if(!new_ptr){
-        fprintf(stderr, "It seems the system ran out of memory");
+        fprintf(stderr, "It seems the system ran out of memory\n");
         lzflist_destroy(allocator);
         exit(EXIT_FAILURE);
     }
@@ -71,11 +72,27 @@ void lzdealloc_link_flist(void *ptr, size_t size, void *ctx){
 }
 
 void *lzalloc_link_arena(size_t size, void *ctx){
-    return LZARENA_ALLOC(ctx, size);
+    void *ptr = LZARENA_ALLOC(ctx, size);
+
+    if(!ptr){
+        fprintf(stderr, "It seems the system ran out of memory\n");
+        lzflist_destroy(allocator);
+        exit(EXIT_FAILURE);
+    }
+
+    return ptr;
 }
 
 void *lzrealloc_link_arena(void *ptr, size_t old_size, size_t new_size, void *ctx){
-    return LZARENA_REALLOC(ctx, ptr, old_size, new_size);
+    void *new_ptr = LZARENA_REALLOC(ctx, ptr, old_size, new_size);
+
+    if(!new_ptr){
+        fprintf(stderr, "It seems the system ran out of memory\n");
+        lzflist_destroy(allocator);
+        exit(EXIT_FAILURE);
+    }
+
+    return new_ptr;
 }
 
 void lzdealloc_link_arena(void *ptr, size_t size, void *ctx){
@@ -185,74 +202,80 @@ static void get_args(int argc, const char *argv[], Args *args){
     }
 }
 
-DStr get_cwd(Allocator *allocator){
-    char *buff = utils_files_cwd(allocator);
-    size_t len = strlen(buff);
+DStr *get_cwd(Allocator *allocator){
+    size_t len = 0;
+    char *buff = utils_files_cwd(allocator, &len);
+    DStr *str = MEMORY_ALLOC(allocator, DStr, 1);
 
-    return (DStr){
+    *str = (DStr){
         .len = len,
         .buff = buff
     };
+
+    return str;
 }
 
-DynArr *parse_search_paths(Allocator *allocator, DStr *main_search_pathname, char *raw_search_paths){
-    DynArr *search_paths = MEMORY_DYNARR_TYPE_COUNT(
-        allocator,
-        DStr,
-        DEFAULT_INITIAL_SEARCH_PATHS_BUFF_LEN
-    );
-    DStr cwd_rstr = get_cwd(allocator);
+DynArr *parse_search_paths(Allocator *allocator, DStr *main_search_pathname, char *raw_search_pathnames){
+    DynArr *search_pathnames = MEMORY_DYNARR_PTR(allocator);
+    DStr *working_dir = get_cwd(allocator);
 
-    if(strcmp(main_search_pathname->buff, cwd_rstr.buff) == 0){
-        MEMORY_DEALLOC(allocator, char, cwd_rstr.len + 1, cwd_rstr.buff);
+    if(strcmp(main_search_pathname->buff, working_dir->buff) == 0){
+        MEMORY_DEALLOC(allocator, char, working_dir->len + 1, working_dir->buff);
+        MEMORY_DEALLOC(allocator, DStr, 1, working_dir);
     }else{
-        dynarr_insert(search_paths, &cwd_rstr);
+        dynarr_insert_ptr(search_pathnames, working_dir);
     }
 
     size_t start_idx = 0;
-    size_t raw_search_paths_len = raw_search_paths ? strlen(raw_search_paths) : 0;
+    size_t raw_search_pathnames_len = raw_search_pathnames ? strlen(raw_search_pathnames) : 0;
 
-    if(raw_search_paths_len == 0){
-        return search_paths;
+    if(raw_search_pathnames_len == 0){
+        return search_pathnames;
     }
 
-    if(raw_search_paths[0] == OS_PATH_SEPARATOR){
+    if(raw_search_pathnames[0] == OS_PATH_SEPARATOR){
         fprintf(
             stderr,
-            "'search paths' cannot starts with '%c'",
+            "'search pathnames' cannot starts with '%c'",
             OS_PATH_SEPARATOR
         );
         exit(EXIT_FAILURE);
     }
 
-    if(raw_search_paths[raw_search_paths_len - 1] == OS_PATH_SEPARATOR){
+    if(raw_search_pathnames[raw_search_pathnames_len - 1] == OS_PATH_SEPARATOR){
         fprintf(
             stderr,
-            "'search paths' cannot ends with '%c'",
+            "'search pathnames' cannot ends with '%c'",
             OS_PATH_SEPARATOR
         );
         exit(EXIT_FAILURE);
     }
 
-    for (size_t i = 0; i < raw_search_paths_len; i++){
-        char c = raw_search_paths[i];
+    for (size_t i = 0; i < raw_search_pathnames_len; i++){
+        char c = raw_search_pathnames[i];
 
-        if(i + 1 < raw_search_paths_len && c != OS_PATH_SEPARATOR){
+        if(i + 1 < raw_search_pathnames_len && c != OS_PATH_SEPARATOR){
             continue;
         }
 
         size_t buff_len = i - start_idx + (c == OS_PATH_SEPARATOR ? 0 : 1);
         char *buff = MEMORY_ALLOC(allocator, char, buff_len + 1);
+        DStr *search_pathname = MEMORY_ALLOC(allocator, DStr, 1);
 
-        memcpy(buff, raw_search_paths + start_idx, buff_len);
+        memcpy(buff, raw_search_pathnames + start_idx, buff_len);
         buff[buff_len] = 0;
 
-        dynarr_insert(search_paths, &((DStr){.len = buff_len, .buff = buff}));
+        *search_pathname = (DStr){
+            .len = buff_len,
+            .buff = buff
+        };
+
+        dynarr_insert_ptr(search_pathnames, search_pathname);
 
         start_idx = i + 1;
     }
 
-    return search_paths;
+    return search_pathnames;
 }
 
 static DStr *create_main_search_pathname(const Allocator *allocator, const char *source_pathname){
@@ -283,7 +306,7 @@ LZOHTable *create_keywords_table(const Allocator *allocator){
 	add_keyword("empty", EMPTY_TOKTYPE, keywords, allocator);
     add_keyword("false", FALSE_TOKTYPE, keywords, allocator);
     add_keyword("true", TRUE_TOKTYPE, keywords, allocator);
-    add_keyword("make", MAKE_TOKTYPE, keywords, allocator);
+    add_keyword("let", LET_TOKTYPE, keywords, allocator);
     add_keyword("mut", MUT_TOKTYPE, keywords, allocator);
     add_keyword("or", OR_TOKTYPE, keywords, allocator);
     add_keyword("and", AND_TOKTYPE, keywords, allocator);
@@ -356,6 +379,7 @@ static void init_memory(){
     rtflist = lzflist_create(NULL);
 
     if(!ctflist || !rtflist){
+        lzflist_destroy(ctflist);
         lzflist_destroy(rtflist);
         fprintf(stderr, "Failed to init memory");
         exit(EXIT_FAILURE);
@@ -401,7 +425,7 @@ static void add_native_fn_obj(
         strlen(name),
         name,
         sizeof(Value),
-        &((Value){.type = OBJ_VALUE_TYPE, .content.obj_val = native_fn_obj}),
+        &OBJ_VALUE(native_fn_obj),
         natives,
         NULL
     );
@@ -410,23 +434,26 @@ static void add_native_fn_obj(
 static LZOHTable *create_default_native_fns(Allocator *allocator){
     LZOHTable *default_natives = MEMORY_LZOHTABLE(allocator);
 
-    add_native_fn_obj(default_natives, allocator, "exit", 1, native_fn_exit);
-	add_native_fn_obj(default_natives, allocator, "assert", 1, native_fn_assert);
-    add_native_fn_obj(default_natives, allocator, "assertm", 2, native_fn_assert);
-    add_native_fn_obj(default_natives, allocator, "is_str_int", 1, native_fn_is_str_int);
-    add_native_fn_obj(default_natives, allocator, "is_str_float", 1, native_fn_is_str_float);
-    add_native_fn_obj(default_natives, allocator, "to_str", 1, native_fn_to_str);
-    add_native_fn_obj(default_natives, allocator, "to_json", 1, native_fn_to_json);
-    add_native_fn_obj(default_natives, allocator, "to_int", 1, native_fn_to_int);
-    add_native_fn_obj(default_natives, allocator, "to_float", 1, native_fn_to_float);
-    add_native_fn_obj(default_natives, allocator, "print", 1, native_fn_print);
-    add_native_fn_obj(default_natives, allocator, "println", 1, native_fn_println);
-    add_native_fn_obj(default_natives, allocator, "eprint", 1, native_fn_eprint);
-    add_native_fn_obj(default_natives, allocator, "eprintln", 1, native_fn_eprintln);
-    add_native_fn_obj(default_natives, allocator, "print_stack", 0, native_fn_print_stack);
-    add_native_fn_obj(default_natives, allocator, "readln", 0, native_fn_readln);
-    add_native_fn_obj(default_natives, allocator, "gc", 0, native_fn_gc);
-    add_native_fn_obj(default_natives, allocator, "halt", 0, native_fn_halt);
+    add_native_fn_obj(default_natives, allocator, "exit",             1, native_fn_exit);
+	add_native_fn_obj(default_natives, allocator, "assert",           1, native_fn_assert);
+    add_native_fn_obj(default_natives, allocator, "assertm",          2, native_fn_assert);
+    add_native_fn_obj(default_natives, allocator, "is_str_int",       1, native_fn_is_str_int);
+    add_native_fn_obj(default_natives, allocator, "is_str_float",     1, native_fn_is_str_float);
+    add_native_fn_obj(default_natives, allocator, "to_str",           1, native_fn_to_str);
+    add_native_fn_obj(default_natives, allocator, "to_json",          1, native_fn_to_json);
+    add_native_fn_obj(default_natives, allocator, "to_int",           1, native_fn_to_int);
+    add_native_fn_obj(default_natives, allocator, "to_float",         1, native_fn_to_float);
+    add_native_fn_obj(default_natives, allocator, "print",            1, native_fn_print);
+    add_native_fn_obj(default_natives, allocator, "println",          1, native_fn_println);
+    add_native_fn_obj(default_natives, allocator, "eprint",           1, native_fn_eprint);
+    add_native_fn_obj(default_natives, allocator, "eprintln",         1, native_fn_eprintln);
+    add_native_fn_obj(default_natives, allocator, "readln",           0, native_fn_readln);
+    add_native_fn_obj(default_natives, allocator, "gc",               0, native_fn_gc);
+    add_native_fn_obj(default_natives, allocator, "halt",             0, native_fn_halt);
+    add_native_fn_obj(default_natives, allocator, "native_array_new", 1, native_fn_native_array_new);
+    add_native_fn_obj(default_natives, allocator, "random_new",       0, native_fn_native_random_new);
+    add_native_fn_obj(default_natives, allocator, "random_seed_new",  1, native_fn_native_random_seed_new);
+    add_native_fn_obj(default_natives, allocator, "open_file",        2, native_fn_native_file_open);
 
     return default_natives;
 }
@@ -493,7 +520,7 @@ int main(int argc, const char *argv[]){
     ScopeManager *manager = scope_manager_create(&ctallocator);
     LZOHTable *modules = MEMORY_LZOHTABLE(&ctallocator);
 	DynArr *tokens = MEMORY_DYNARR_PTR(&ctallocator);
-    DynArr *fns_prototypes = MEMORY_DYNARR_PTR(&ctallocator);
+    DynArr *procs_prototypes = MEMORY_DYNARR_TYPE(&ctallocator, ProcPrototype);
 	DynArr *stmts = MEMORY_DYNARR_PTR(&ctallocator);
 	Lexer *lexer = lexer_create(&ctallocator, &rtallocator);
 	Parser *parser = parser_create(&ctallocator);
@@ -505,31 +532,31 @@ int main(int argc, const char *argv[]){
 
     switch (args.exclusives){
         case ARGS_LEX:{
-            if(lexer_scan(source, tokens, keywords, module_path, lexer)){
+            if(lexer_lex(lexer, source, module_path, keywords, tokens)){
                 result = 1;
                 goto CLEAN_UP_COMPTIME;
             }
 
             break;
         }case ARGS_PARSE:{
-            if(lexer_scan(source, tokens, keywords, module_path, lexer)){
+            if(lexer_lex(lexer, source, module_path, keywords, tokens)){
                 result = 1;
                 goto CLEAN_UP_COMPTIME;
             }
 
-            if(parser_parse(tokens, fns_prototypes, stmts, parser)){
+            if(parser_parse(tokens, procs_prototypes, stmts, parser)){
                 result = 1;
                 goto CLEAN_UP_COMPTIME;
             }
 
             break;
         }case ARGS_COMPILE:{
-            if(lexer_scan(source, tokens, keywords, module_path, lexer)){
+            if(lexer_lex(lexer, source, module_path, keywords, tokens)){
                 result = 1;
                 goto CLEAN_UP_COMPTIME;
             }
 
-            if(parser_parse(tokens, fns_prototypes, stmts, parser)){
+            if(parser_parse(tokens, procs_prototypes, stmts, parser)){
                 result = 1;
                 goto CLEAN_UP_COMPTIME;
             }
@@ -540,7 +567,9 @@ int main(int argc, const char *argv[]){
                 main_search_pathname,
                 search_pathnames,
                 default_native,
+                procs_prototypes,
                 manager,
+                modules,
                 stmts,
                 module_path
             );
@@ -552,12 +581,12 @@ int main(int argc, const char *argv[]){
 
             break;
         }case ARGS_DUMP:{
-            if(lexer_scan(source, tokens, keywords, module_path, lexer)){
+            if(lexer_lex(lexer, source, module_path, keywords, tokens)){
                 result = 1;
                 goto CLEAN_UP_COMPTIME;
             }
 
-            if(parser_parse(tokens, fns_prototypes, stmts, parser)){
+            if(parser_parse(tokens, procs_prototypes, stmts, parser)){
                 result = 1;
                 goto CLEAN_UP_COMPTIME;
             }
@@ -568,7 +597,9 @@ int main(int argc, const char *argv[]){
                 main_search_pathname,
                 search_pathnames,
                 default_native,
+                procs_prototypes,
                 manager,
+                modules,
                 stmts,
                 module_path
             );
@@ -585,12 +616,12 @@ int main(int argc, const char *argv[]){
             if(args.help){
                 print_help();
             }else if(args.source_pathname){
-                if(lexer_scan(source, tokens, keywords, module_path, lexer)){
+                if(lexer_lex(lexer, source, module_path, keywords, tokens)){
                     result = 1;
                     goto CLEAN_UP_COMPTIME;
                 }
 
-                if(parser_parse(tokens, fns_prototypes, stmts, parser)){
+                if(parser_parse(tokens, procs_prototypes, stmts, parser)){
                     result = 1;
                     goto CLEAN_UP_COMPTIME;
                 }
@@ -601,7 +632,9 @@ int main(int argc, const char *argv[]){
                     main_search_pathname,
                     search_pathnames,
                     default_native,
+                    procs_prototypes,
                     manager,
+                    modules,
                     stmts,
                     module_path
                 );
@@ -613,6 +646,12 @@ int main(int argc, const char *argv[]){
 
                 lzflist_destroy(ctflist);
                 vm_initialize(vm);
+
+                NativeContext *context = vm_native_context(vm);
+
+                native_file_init(context);
+                native_array_init(context);
+                native_random_init(context);
 
                 result = vm_execute(default_native, main_module, vm);
 

@@ -50,7 +50,7 @@
         return cloned_pathname;
     }
 
-    char *utils_files_cwd(const Allocator *allocator){
+    char *utils_files_cwd(const Allocator *allocator, size_t *out_len){
         DWORD buff_len = 0;
         LPTSTR buff = NULL;
 
@@ -63,7 +63,12 @@
 
         if(GetCurrentDirectory(buff_len, buff) == 0){
             MEMORY_DEALLOC(allocator, CHAR, buff_len, buff);
+
             return NULL;
+        }
+
+        if(out_len){
+            *out_len = buff_len;
         }
 
         return buff;
@@ -77,7 +82,7 @@
         return access(pathname, R_OK) == 0;
     }
 
-    int utils_files_is_directory(char *pathname){
+    int utils_files_is_directory(const char *pathname){
         struct stat file = {0};
 
         if(stat(pathname, &file) == -1){
@@ -99,23 +104,30 @@
 
     inline char *utils_files_parent_pathname(const Allocator *allocator, const char *pathname){
         char *cloned_pathname = memory_clone_cstr(allocator, pathname, NULL);
+
         return dirname(cloned_pathname);
     }
 
-    char *utils_files_cwd(const Allocator *allocator){
+    char *utils_files_cwd(const Allocator *allocator, size_t *out_len){
         char *pathname = getcwd(NULL, 0);
         size_t pathname_len = strlen(pathname);
         char *cloned_pathname = MEMORY_ALLOC(allocator, char, pathname_len + 1);
 
         if(!cloned_pathname){
             free(pathname);
+
             return NULL;
         }
 
         memcpy(cloned_pathname, pathname, pathname_len);
+
         cloned_pathname[pathname_len] = '\0';
 
         free(pathname);
+
+        if(out_len){
+            *out_len = pathname_len;
+        }
 
         return cloned_pathname;
     }

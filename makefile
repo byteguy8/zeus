@@ -27,8 +27,8 @@ FLAGS.VM            := $(FLAGS.DEFAULT) -I$(INCLUDE_DIR)/vm -I$(INCLUDE_DIR)
 
 ESSENTIALS_OBJS     := lzbstr.o dynarr.o lzohtable.o lzarena.o lzpool.o lzflist.o memory.o
 NATIVES_OBJS        := splitmix64.o xoshiro256.o
-SCOPE_MANAGER_OBJS  := scope_manager.o native.o native_random.o native_nbarray.o native_file.o
-VM_OBJS             := vm_factory.o obj.o vmu.o vm.o
+SCOPE_MANAGER_OBJS  := scope_manager.o native_array.o native_random.o native_file.o
+VM_OBJS             := vm_factory.o obj.o vm_utils.o vm.o
 OBJS                := $(ESSENTIALS_OBJS) \
 					   $(NATIVES_OBJS) \
 					   $(SCOPE_MANAGER_OBJS) \
@@ -42,33 +42,13 @@ LINKS.WINDOWS       := -lshlwapi
 LINKS.LINUX         :=
 LINKS               := $(LINKS.COMMON) $(LINKS.$(PLATFORM))
 
-ifdef RAYLIB_INCLUDE
-	ifndef RAYLIB_LIB
-        $(error RAYLIB_LIB must be defined)
-	endif
-
-	FLAGS.COMPILER += -I$(RAYLIB_INCLUDE) -DRAYLIB
-endif
-
-ifdef RAYLIB_LIB
-	ifndef RAYLIB_INCLUDE
-        $(error RAYLIB_INCLUDE must be defined)
-	endif
-
-	ifeq ($(PLATFORM), LINUX)
-		LINKS += -lm -lpthread -ldl -lrt -lX11 $(RAYLIB_LIB)/libraylib.a
-	else
-		LINKS += -L$(RAYLIB_LIB) -lraylib -lopengl32 -lgdi32 -lwinmm -luser32 -lkernel32 -lshell32
-	endif
-endif
-
 zeus: $(OBJS)
 	$(COMPILER) -o $(OUT_DIR)/zeus $(FLAGS) $(OUT_DIR)/*.o $(SRC_DIR)/zeus.c $(LINKS)
 
 vm.o:
 	$(COMPILER) -c -o $(OUT_DIR)/vm.o $(FLAGS.VM) $(SRC_DIR)/vm/vm.c
-vmu.o:
-	$(COMPILER) -c -o $(OUT_DIR)/vmu.o $(FLAGS.VM) $(SRC_DIR)/vm/vmu.c
+vm_utils.o:
+	$(COMPILER) -c -o $(OUT_DIR)/vm_utils.o $(FLAGS.VM) $(SRC_DIR)/vm/vm_utils.c
 obj.o:
 	$(COMPILER) -c -o $(OUT_DIR)/obj.o $(FLAGS.VM) $(SRC_DIR)/vm/obj.c
 vm_factory.o:
@@ -83,14 +63,12 @@ parser.o:
 lexer.o:
 	$(COMPILER) -c -o $(OUT_DIR)/lexer.o $(FLAGS) $(SRC_DIR)/lexer.c
 
+native_array.o:
+	$(COMPILER) -c -o $(OUT_DIR)/native_array.o $(FLAGS.NATIVES) $(SRC_DIR)/native/native_array.c
 native_file.o:
 	$(COMPILER) -c -o $(OUT_DIR)/native_file.o $(FLAGS.NATIVES) $(SRC_DIR)/native/native_file.c
-native_nbarray.o:
-	$(COMPILER) -c -o $(OUT_DIR)/native_nbarray.o $(FLAGS.NATIVES) $(SRC_DIR)/native/native_nbarray.c
 native_random.o:
 	$(COMPILER) -c -o $(OUT_DIR)/native_random.o $(FLAGS.NATIVES) $(SRC_DIR)/native/native_random.c
-native.o:
-	$(COMPILER) -c -o $(OUT_DIR)/native.o $(FLAGS.NATIVES) $(SRC_DIR)/native/native.c
 xoshiro256.o:
 	$(COMPILER) -c -o $(OUT_DIR)/xoshiro256.o $(FLAGS.NATIVES) $(SRC_DIR)/native/xoshiro256.c
 splitmix64.o:

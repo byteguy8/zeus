@@ -1,34 +1,23 @@
 #ifndef CLOSURE_H
 #define CLOSURE_H
 
-#include "value.h"
-#include "fn.h"
+#include "vm_types.h"
+
 #include <stdint.h>
 
-#define OUT_VALUES_LENGTH 255
-
-typedef struct meta_out_value{
-    uint8_t at;
-}MetaOutValue;
-
-typedef struct meta_closure{
-    uint8_t meta_out_values_len;
-    MetaOutValue meta_out_values[OUT_VALUES_LENGTH];
-    Fn *fn;
-}MetaClosure;
-
-typedef struct out_value{
-    uint8_t linked;
-    int16_t at;
-    Value value;
-    struct out_value *prev;
-    struct out_value *next;
-    void *closure_obj;
-}OutValue;
+typedef struct foreign_value{
+    bool_t               linked;
+    int16_t              local;
+    Value                *value;
+    struct foreign_value *prev;
+    struct foreign_value *next;
+}ForeignValue;
 
 typedef struct closure{
-    OutValue *out_values;
-    MetaClosure *meta;
+    uint8_t      locals_len;
+    uint8_t      *locals;
+    ForeignValue *foreigns;
+    Fn           *fn;
 }Closure;
 
 #endif
