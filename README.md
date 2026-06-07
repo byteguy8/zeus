@@ -49,8 +49,8 @@ dict(                    // dictionaries
 ```
 
 ### Variables
-    mut foo = false; // can change its value
-    imut bar = 3.14; // cannot change its value
+    let mut foo = false; // can change its value
+    let bar = 3.14; // cannot change its value
 
 ### Strings
 
@@ -59,24 +59,24 @@ Strings in Zeus are immutable
 #### Indexing
 
 ```
-imut foo = "Hello world!";
+let foo = "Hello world!";
 
 println(foo[0]);          // printing first character
-println(foo[foo.len()]);  // printing last character
+println(foo[foo.len() - 1]);  // printing last character
 ```
 
 #### Concatenation
 
 ```
-imut name = "Michael";
-imut lastname = "Byte";
-imut full_name = name .. " " .. lastname; // result: 'Michael Byte'
+let name = "Michael";
+let lastname = "Byte";
+let full_name = name .. " " .. lastname; // result: 'Michael Byte'
 ```
 
 #### Multiplication
 
 ```
-imut foo = "ha" ** 8; // result: hahahahahahahaha
+let foo = "ha" ** 8; // result: hahahahahahahaha
 ```
 
 ### Data Structures
@@ -85,14 +85,14 @@ imut foo = "ha" ** 8; // result: hahahahahahahaha
 You can create a empty array of x length:
 
 ```
-imut values = array[1024];
+let values = array[1024];
 println(values.len());
 ```
 
 or just hardcode some values:
 
 ```
-imut foo = array(empty, false, true, 2, 3.14);
+let foo = array(empty, false, true, 2, 3.14);
 
 println(foo[0]);         // getting the value at index 0
 foo[0] = "Some text..."; // replacing value at index 0
@@ -101,7 +101,7 @@ println(foo[0]);         // printing new value at index 0
 #### Lists
 
 ```
-imut bar = list(empty, false, true, 2, 3.14);
+let bar = list(empty, false, true, 2, 3.14);
 
 println(foo[0]);           // getting value at index 0
 foo[0] = "Some text...";   // setting value at index 0
@@ -110,13 +110,13 @@ foo[0] = "Some text...";   // setting value at index 0
 #### Dicts
 
 ```
-imut foo = dict(
+let foo = dict(
     1 to "I will not waste chalk",
     2 to "I will not skateboard in the halls",
     3 to "I will not instigate revolution"
 );
 
-println(foo[2])                 // getting the value at key '2'
+println(foo[2]);                // getting the value at key '2'
 foo[4] = "I did not see Elvis"; // replacing the value at key '4'
 ```
 
@@ -161,7 +161,7 @@ But you can also use catch without a variable, even if throw is used with some v
 
 ```
 try{
-    bar();
+    foo();
 }catch{
     // some code...
 }
@@ -170,24 +170,31 @@ try{
 ### Conditional
 
 ```
-mut sum0 = 0;
-mut sum1 = 0;
-mut sum2 = 0;
+let mut sum0 = 0;
+let mut sum1 = 0;
+let mut sum2 = 0;
+let mut sum3 = 0;
 
-for(i = 1 upto 101){
-    if(i <= 25){
+for(let i = 1; i <= 100; i += 1){
+    if(i < 25){
         sum0 += i;
-    }elif(i <= 50){
+    }elif(i < 50){
         sum1 += i;
-    }else{
+    }elif(i < 75){
         sum2 += i;
+    }else{
+        sum3 += i;
     }
 }
 
-println("sum #1 (from 1 to 25): " .. to_str(sum0));
-println("sum #2 (from 26 to 50): " .. to_str(sum1));
-println("sum #3 (from 51 to 100): " .. to_str(sum2));
-println("Gauss: " .. to_str(sum0 + sum1 + sum2));
+sum1 += sum0;
+sum2 += sum1;
+sum3 += sum2;
+
+println("sum #1 [1, 25): {sum0}");
+println("sum #2 [1, 50): {sum1}");
+println("sum #3 [1, 75): {sum2}");
+println("Gauss [1, 100]: {sum3}");
 ```
 
 ### Loops
@@ -196,11 +203,12 @@ println("Gauss: " .. to_str(sum0 + sum1 + sum2));
 ```
 // PRINTING THE ALPHABET
 
-imut alphabet = "abcdefghijklmnopqrstuvwxyz";
-mut i = 0;
+let alphabet = "abcdefghijklmnopqrstuvwxyz";
+let mut i = 0;
 
 while(i < alphabet.len()){
-    imut letter = alphabet[i];
+    let letter = alphabet[i];
+
     println(letter);
 
     i += 1;
@@ -208,17 +216,18 @@ while(i < alphabet.len()){
 
 // PRINTING EVEN NUMBERS IN INTERVAL [1, 100]
 
-mut o = 1;
+let mut o = 1;
 
 while(o <= 100){
     if(o mod 2 != 0){
         o += 1;
+
         continue;
     }
 
     println(o);
 
-    io += 1;
+    o += 1;
 }
 ```
 
@@ -227,23 +236,25 @@ while(o <= 100){
 ```
 // PRINTING THE ALPHABET
 
-imut alphabet = "abcdefghijklmnopqrstuvwxyz";
+let alphabet = "abcdefghijklmnopqrstuvwxyz";
 
 // in normal order
-for(i = 0 upto alphabet.len()){
-    imut letter = alphabet[i];
+for(let i = 0; i < alphabet.len(); i += 1){
+    let letter = alphabet[i];
+
     println(letter);
 }
 
 // in reverse order
-for(i = 0 downto alphabet.len()){
-    imut letter = alphabet[i];
+for(let i = alphabet.len() - 1; i >= 0; i -= 1){
+    let letter = alphabet[i];
+
     println(letter);
 }
 
 // PRINTING EVEN NUMBERS IN INTERVAL [1, 100]
 
-for(num = 1 upto 101){
+for(let num = 1; num <= 100; num += 1){
     if(num mod 2 == 0){
         println(num);
     }
@@ -251,11 +262,12 @@ for(num = 1 upto 101){
 
 // PRINTING THE FIRST 10 EVEN NUMBERS IN INTERVAL [1, 100]
 
-mut even_count = 0;
+let mut even_count = 0;
 
-for(num = 1 upto 101){
+for(let num = 1; num <= 100; num += 1){
     if(num mod 2 == 0){
         even_count += 1;
+
         println(num);
     }
 
