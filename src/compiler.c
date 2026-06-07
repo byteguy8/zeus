@@ -130,11 +130,23 @@ static StatusCode import_module(
     Module **out_module
 );
 static Symbol *clone_symbol(const Symbol *symbol, const Allocator *allocator);
-static void import_stmt(Compiler *compiler, ImportStmt *import_stmt);
+
+static void expr_stmt(Compiler *compiler, ExprStmt *expr_stmt);
+static void var_decl_stmt(Compiler *compiler, VarDeclStmt *var_decl_stmt);
+static void block_stmt(Compiler *compiler, BlockStmt *block_stmt);
+static void if_stmt(Compiler *compiler, IfStmt *if_stmt);
+static void stop_stmt(Compiler *compiler, StopStmt *stop_stmt);
+static void continue_stmt(Compiler *compiler, ContinueStmt *continue_stmt);
 static void while_stmt(Compiler *compiler, WhileStmt *while_stmt);
 static void for_stmt(Compiler *compiler, ForStmt *for_stmt);
+static void throw_stmt(Compiler *compiler, ThrowStmt *throw_stmt);
+static void try_stmt(Compiler *compiler, TryStmt *try_stmt);
 static void return_stmt(Compiler *compiler, ReturnStmt *ret_stmt);
+static void proc_stmt(Compiler *compiler, ProcStmt *proc_stmt);
+static void import_stmt(Compiler *compiler, ImportStmt *import_stmt);
+static void export_stmt(Compiler *compiler, ExportStmt *export_stmt);
 static void compile_stmt(Compiler *compiler, Stmt *stmt);
+
 static void declare_defaults(Compiler *compiler);
 static void declare_proc_prototypes(Compiler *compiler, DynArr *procs_prototypes);
 
@@ -2173,6 +2185,605 @@ Symbol *clone_symbol(const Symbol *symbol, const Allocator *allocator){
     }
 }
 
+void expr_stmt(Compiler *compiler, ExprStmt *expr_stmt){
+    Expr *sub_expr = expr_stmt->expr;
+
+    compile_expr(compiler, sub_expr);
+    write_chunk(compiler, OP_POP);
+}
+
+void var_decl_stmt(Compiler *compiler, VarDeclStmt *var_decl_stmt){
+    ScopeManager *manager = compiler->manager;
+
+    uint8_t is_mutable = var_decl_stmt->is_mutable;
+    uint8_t is_initialized = var_decl_stmt->is_initialized;
+    Token *identifier_token = var_decl_stmt->identifier_token;
+    Expr *initial_value_expr = var_decl_stmt->initial_value_expr;
+
+    if(scope_manager_exists_procedure_name(
+        manager,
+        identifier_token->lexeme_len,
+        identifier_token->lexeme
+    )){
+        error(
+            compiler,
+            identifier_token,
+            "Cannot shadow procedures name"
+        );
+    }
+
+    if(initial_value_expr){
+        compile_expr(compiler, initial_value_expr);
+    }else{
+        write_chunk(compiler, OP_EMPTY);
+    }
+
+    if(scope_manager_is_global_scope(manager)){
+        if(!is_mutable && !is_initialized){
+            error(
+                compiler,
+                identifier_token,
+                "Immutable global variables must be initialized in declaration place"
+            );
+        }
+
+        scope_manager_define_global(
+            manager,
+            is_mutable,
+            identifier_token
+        );
+
+        write_chunk(compiler, OP_GLOBAL_DEF);
+        write_location(compiler, identifier_token);
+        write_str_alloc(
+            compiler,
+            identifier_token->lexeme_len,
+            identifier_token->lexeme
+        );
+    }else{
+        scope_manager_define_local(
+            manager,
+            is_mutable,
+            is_initialized,
+            identifier_token
+        );
+    }
+}
+
+void block_stmt(Compiler *compiler, BlockStmt *block_stmt){
+    ScopeManager *manager = compiler->manager;
+
+    DynArr *stmts = block_stmt->stmts;
+
+    size_t stmts_len = stmts ? dynarr_len(stmts) : 0;
+
+    if(scope_manager_is_global_scope(manager)){
+        error(
+            compiler,
+            block_stmt->left_bracket_token,
+            "Block statements not allowed in global scope"
+        );
+    }
+
+    Scope *scope = scope_manager_push(manager, BLOCK_SCOPE_KIND);
+    Block *block = push_block(compiler);
+
+    block->stmts_len = stmts_len;
+
+    for (size_t i = 0; i < stmts_len; i++){
+        if(AS_LOCAL_SCOPE(scope)->returned){
+            error(
+                compiler,
+                block_stmt->left_bracket_token,
+                "Cannot exists statements after the scope returned"
+            );
+        }
+
+        Stmt *stmt = dynarr_get_ptr(stmts, i);
+        block->current_stmt = i + 1;
+
+        compile_stmt(compiler, stmt);
+    }
+
+    propagate_return(compiler, scope);
+
+    pop_locals(compiler);
+    pop_block(compiler);
+    scope_manager_pop(manager);
+}
+
+void if_stmt(Compiler *compiler, IfStmt *if_stmt){
+    ScopeManager *manager = compiler->manager;
+
+    IfStmtBranch *if_branch = if_stmt->if_branch;
+    DynArr *elif_branches = if_stmt->elif_branches;
+    DynArr *else_stmts = if_stmt->else_stmts;
+    size_t elif_branches_len = elif_branches ? dynarr_len(elif_branches) : 0;
+    int32_t if_id = generate_id(compiler);
+
+    size_t branches_len = 1 + (elif_branches ? dynarr_len(elif_branches) : 0) + (else_stmts ? 1 : 0);
+    uint16_t returns = compile_if_branch(compiler, if_branch, IF_SCOPE_KIND, if_id, 0) ? 1 : 0;
+
+    for (size_t i = 0; i < elif_branches_len; i++){
+        IfStmtBranch *elif_branch = dynarr_get_ptr(elif_branches, i);
+
+        if(compile_if_branch(
+            compiler,
+            elif_branch,
+            ELIF_SCOPE_KIND,
+            if_id,
+            i + 1
+        )){
+            returns++;
+        }
+    }
+
+    if(else_stmts){
+        size_t else_stmts_len = dynarr_len(else_stmts);
+
+        Scope *scope = scope_manager_push(manager, ELSE_SCOPE_KIND);
+        Block *block = push_block(compiler);
+
+        block->current_stmt = else_stmts_len;
+
+        for (size_t i = 0; i < else_stmts_len; i++){
+            if(AS_LOCAL_SCOPE(scope)->returned){
+                error(
+                    compiler,
+                    if_branch->branch_token,
+                    "Cannot exists statements after the scope returned"
+                );
+            }
+
+            Stmt *stmt = dynarr_get_ptr(else_stmts, i);
+            block->current_stmt = i + 1;
+
+            compile_stmt(compiler, stmt);
+        }
+
+        if(AS_LOCAL_SCOPE(scope)->returned){
+            returns++;
+        }
+
+        if(returns == branches_len){
+            propagate_return(compiler, scope);
+        }
+
+        pop_block(compiler);
+        pop_locals(compiler);
+        scope_manager_pop(manager);
+    }
+
+    label(compiler, if_branch->branch_token, ".IF(%"PRId32")_END", if_id);
+}
+
+void stop_stmt(Compiler *compiler, StopStmt *stop_stmt){
+    ScopeManager *manager = compiler->manager;
+
+    Token *stop_token = stop_stmt->stop_token;
+
+    Scope *scope = scope_manager_is_loop(manager);
+
+    if(scope){
+        size_t locals_count = scope->symbols->n;
+
+        assert(locals_count <= UINT8_MAX);
+
+        write_chunk(compiler, OP_OFFSET);
+        write_location(compiler, stop_token);
+        write_chunk(compiler, (uint8_t)locals_count);
+
+        if(scope->type == WHILE_SCOPE_KIND){
+            jmp(compiler, stop_token, ".WHILE_%"PRId32":END", peek_loop(compiler)->id);
+
+            return;
+        }
+
+        if(scope->type == FOR_SCOPE_KIND){
+            jmp(compiler, stop_token, ".FOR_%"PRId32":END", peek_loop(compiler)->id);
+
+            return;
+        }
+
+        assert(0 && "Illegal scope kind");
+    }
+
+    error(
+        compiler,
+        stop_token,
+        "Stop statements only allowed in while and for loops"
+    );
+}
+
+void continue_stmt(Compiler *compiler, ContinueStmt *continue_stmt){
+    ScopeManager *manager = compiler->manager;
+
+    Token *continue_token = continue_stmt->continue_token;
+
+    Scope *scope = scope_manager_is_loop(manager);
+
+    if(scope){
+        size_t locals_count = scope->symbols->n;
+
+        assert(locals_count <= UINT8_MAX);
+
+        write_chunk(compiler, OP_OFFSET);
+        write_location(compiler, continue_token);
+        write_chunk(compiler, (uint8_t)locals_count);
+
+        if(scope->type == WHILE_SCOPE_KIND){
+            jmp(compiler, continue_token, ".WHILE_%"PRId32":CONDITION", peek_loop(compiler)->id);
+
+            return;
+        }
+
+        if(scope->type == FOR_SCOPE_KIND){
+            jmp(compiler, continue_token, ".FOR_%"PRId32":CONDITION", peek_loop(compiler)->id);
+
+            return;
+        }
+
+        assert(0 && "Illegal scope kind");
+    }
+
+    error(
+        compiler,
+        continue_token,
+        "Continue statements only allowed in while and for loops"
+    );
+}
+
+void while_stmt(Compiler *compiler, WhileStmt *while_stmt){
+    ScopeManager *manager = compiler->manager;
+
+    Token *while_token = while_stmt->while_token;
+    Expr *condition_expr = while_stmt->condition_expr;
+    DynArr *stmts = while_stmt->stmts;
+
+    size_t stmts_len = stmts ? dynarr_len(stmts) : 0;
+    int32_t while_id = generate_id(compiler);
+
+    label(compiler, while_token, ".WHILE_%"PRId32":CONDITION", while_id);
+
+    compile_expr(compiler, condition_expr);
+
+    jif(compiler, while_token, ".WHILE_%"PRId32":END", while_id);
+
+    scope_manager_push(manager, WHILE_SCOPE_KIND);
+    push_loop(compiler, while_id);
+
+    Block *block = push_block(compiler);
+
+    block->stmts_len = stmts_len;
+
+    for (size_t i = 0; i < stmts_len; i++){
+        Stmt *stmt = dynarr_get_ptr(stmts, i);
+
+        block->current_stmt = i + 1;
+
+        compile_stmt(compiler, stmt);
+    }
+
+    pop_locals(compiler);
+
+    jmp(compiler, while_token, ".WHILE_%"PRId32":CONDITION", while_id);
+    label(compiler, while_token, ".WHILE_%"PRId32":END", while_id);
+
+    pop_block(compiler);
+    pop_loop(compiler);
+    scope_manager_pop(manager);
+}
+
+void for_stmt(Compiler *compiler, ForStmt *for_stmt){
+    ScopeManager *manager = compiler->manager;
+
+    Token *for_token = for_stmt->for_token;
+    DynArr *initializations = for_stmt->initializations;
+    Expr *condition_expr = for_stmt->condition_expr;
+    DynArr *update_exprs = for_stmt->update_exprs;
+    DynArr *stmts = for_stmt->stmts;
+
+    int32_t for_id = generate_id(compiler);
+    size_t initializations_len = initializations ? dynarr_len(initializations) : 0;
+    size_t update_exprs_len = update_exprs ? dynarr_len(update_exprs) : 0;
+    size_t stmts_len = stmts ? dynarr_len(stmts) : 0;
+
+    scope_manager_push(manager, BLOCK_SCOPE_KIND);
+
+    for (size_t i = 0; i < initializations_len; i++){
+        VarDeclStmt *var_decl_stmt = DYNARR_GET_PTR_AS(initializations, VarDeclStmt, i);
+
+        compile_expr(compiler, var_decl_stmt->initial_value_expr);
+        scope_manager_define_local(manager, 1, 1, var_decl_stmt->identifier_token);
+    }
+
+    label(compiler, for_token, ".FOR_%"PRId32":CONDITION", for_id);
+
+    if(condition_expr){
+        compile_expr(compiler, condition_expr);
+        jif(compiler, for_token, ".FOR_%"PRId32":EXIT", for_id);
+    }
+
+    scope_manager_push(manager, FOR_SCOPE_KIND);
+    push_loop(compiler, for_id);
+
+    Block *block = push_block(compiler);
+
+    for (size_t i = 0; i < stmts_len; i++){
+        Stmt *stmt = DYNARR_GET_PTR_AS(stmts, Stmt, i);
+
+        block->current_stmt = i + 1;
+
+        compile_stmt(compiler, stmt);
+    }
+
+    pop_locals(compiler);
+
+    for (size_t i = 0; i < update_exprs_len; i++){
+        Expr *update_expr = DYNARR_GET_PTR_AS(update_exprs, Expr, i);
+
+        compile_expr(compiler, update_expr);
+        write_chunk(compiler, OP_POP);
+        write_location(compiler, for_token);
+    }
+
+    jmp(compiler, for_token, ".FOR_%"PRId32":CONDITION", for_id);
+    label(compiler, for_token, ".FOR_%"PRId32":END", for_id);
+
+    pop_locals(compiler);
+    pop_block(compiler);
+    pop_loop(compiler);
+    scope_manager_pop(manager);
+
+    label(compiler, for_token, ".FOR_%"PRId32":EXIT", for_id);
+
+    pop_locals(compiler);
+    scope_manager_pop(manager);
+}
+
+void throw_stmt(Compiler *compiler, ThrowStmt *throw_stmt){
+    ScopeManager *manager = compiler->manager;
+
+    Token *throw_token = throw_stmt->throw_token;
+    Expr *throw_value_expr = throw_stmt->value_expr;
+
+    if(IS_GLOBAL_SCOPE(scope_manager_peek(manager))){
+        error(
+            compiler,
+            throw_token,
+            "Cannot use throw statements in global scope"
+        );
+    }
+
+    if(throw_value_expr){
+        compile_expr(compiler, throw_value_expr);
+    }else{
+        write_chunk(compiler, OP_EMPTY);
+        write_location(compiler, throw_token);
+    }
+
+    write_chunk(compiler, OP_THROW);
+    write_location(compiler, throw_token);
+}
+
+void try_stmt(Compiler *compiler, TryStmt *try_stmt){
+    ScopeManager *manager = compiler->manager;
+
+    Token *try_token = try_stmt->try_token;
+    DynArr *try_stmts = try_stmt->try_stmts;
+    Token *catch_token = try_stmt->catch_token;
+    Token *err_identifier = try_stmt->err_identifier;
+    DynArr *catch_stmts = try_stmt->catch_stmts;
+
+    size_t try_stmts_len = dynarr_len(try_stmts);
+    size_t catch_stmts_len = dynarr_len(catch_stmts);
+
+    if(scope_manager_peek(manager)->type == CATCH_SCOPE_KIND){
+        error(
+            compiler,
+            try_token,
+            "Cannot use try statements inside catch blocks"
+        );
+    }
+
+    uint32_t try_id = generate_id(compiler);
+
+    //---------- TRY BLOCK ----------//
+    Scope *try_scope = scope_manager_push(manager, TRY_SCOPE_KIND);
+    Block *try_block = push_block(compiler);
+
+    write_chunk(compiler, OP_TRY_IN);
+    write_location(compiler, try_token);
+    mark(compiler, try_token, "CATCH(%"PRId32")", try_id);
+
+    try_block->stmts_len = try_stmts_len;
+
+    for (size_t i = 0; i < try_stmts_len; i++){
+        if(AS_LOCAL_SCOPE(try_scope)->returned){
+            error(
+                compiler,
+                try_token,
+                "Cannot exists statements after the scope returned"
+            );
+        }
+
+        try_block->current_stmt = i + 1;
+
+        compile_stmt(compiler, dynarr_get_ptr(try_stmts, i));
+    }
+
+    pop_locals(compiler);
+    write_chunk(compiler, OP_TRY_OUT);
+    write_location(compiler, try_token);
+
+    jmp(compiler, try_token, "CATCH(%"PRId32")_END", try_id);
+
+    pop_block(compiler);
+    scope_manager_pop(manager);
+
+    //---------- CATCH BLOCK ----------//
+    Scope *catch_scope = scope_manager_push(manager, CATCH_SCOPE_KIND);
+
+    if(err_identifier){
+        scope_manager_define_local(manager, 0, 1, err_identifier);
+    }
+
+    Block *catch_block = push_block(compiler);
+
+    label(compiler, catch_token, "CATCH(%"PRId32")", try_id);
+
+    catch_block->stmts_len = catch_stmts_len;
+
+    for (size_t i = 0; i < catch_stmts_len; i++){
+        if(AS_LOCAL_SCOPE(catch_scope)->returned){
+            error(
+                compiler,
+                catch_token,
+                "Cannot exists statements after the scope returned"
+            );
+        }
+
+        catch_block->current_stmt = i + 1;
+
+        compile_stmt(compiler, dynarr_get_ptr(catch_stmts, i));
+    }
+
+    pop_locals(compiler);
+
+    label(compiler, catch_token, "CATCH(%"PRId32")_END", try_id);
+
+    pop_block(compiler);
+    scope_manager_pop(manager);
+}
+
+void return_stmt(Compiler *compiler, ReturnStmt *ret_stmt){
+    ScopeManager *manager = compiler->manager;
+
+    Token *ret_token = ret_stmt->return_token;
+    Expr *ret_expr = ret_stmt->ret_expr;
+
+    if(scope_manager_is_global_scope(manager)){
+        error(
+            compiler,
+            ret_token,
+            "Return statements not allowed in global scope"
+        );
+    }
+
+    Block *block = peek_block(compiler);
+    Scope *scope = scope_manager_peek(compiler->manager);
+
+    if(block->current_stmt < block->stmts_len){
+        error(
+            compiler,
+            ret_token,
+            "Return statements must be the last in the scope"
+        );
+    }
+
+    assert(IS_LOCAL_SCOPE(scope) && "Scope must be local");
+    AS_LOCAL_SCOPE(scope)->returned = 1;
+
+    if(ret_expr){
+        if(ret_expr->type == IDENTIFIER_EXPR_TYPE){
+            IdentifierExpr *identifier_expr = ret_expr->sub_expr;
+            Token *identifier_token = identifier_expr->identifier_token;
+            Symbol *symbol = scope_manager_get_symbol(compiler->manager, identifier_token);
+
+            if(symbol->kind == MODULE_SYMBOL_KIND){
+                error(
+                    compiler,
+                    identifier_token,
+                    "Cannot return modules"
+                );
+            }
+        }
+
+        compile_expr(compiler, ret_expr);
+    }
+
+    write_chunk(compiler, OP_RET);
+    write_location(compiler, ret_token);
+}
+
+void proc_stmt(Compiler *compiler, ProcStmt *proc_stmt){
+    ScopeManager *manager = compiler->manager;
+
+    Token *identifier = proc_stmt->identifier;
+    DynArr *params = proc_stmt->params;
+    DynArr *stmts = proc_stmt->stmts;
+
+    if(!scope_manager_is_global_scope(manager)){
+        error(
+            compiler,
+            identifier,
+            "Procedures declarations only allowed in global scope"
+        );
+    }
+
+    size_t params_len = params ? dynarr_len(params) : 0;
+    size_t stmts_len = stmts ? dynarr_len(stmts) : 0;
+
+    Module *module = current_module(compiler);
+    Fn *fn = vm_factory_module_fn_create(
+        compiler->rtallocator,
+        module,
+        identifier->lexeme,
+        params_len,
+        NULL
+    );
+    FnObj *fn_obj = vm_factory_fn_obj_create(compiler->rtallocator, fn);
+    FnSymbol *fn_symbol = (FnSymbol *)scope_manager_get_symbol(manager, identifier);
+
+    fn_symbol->params_count = (uint8_t)params_len;
+
+    vm_factory_module_globals_add_obj(
+        module,
+        (Obj *)fn_obj,
+        identifier->lexeme,
+        PRIVATE_GLOBAL_VALUE_TYPE
+    );
+
+    scope_manager_push_scopes(manager);
+    scope_manager_push(manager, FN_SCOPE_KIND);
+    push_unit(compiler, fn);
+    Block *block = push_block(compiler);
+
+    for (size_t i = 0; i < params_len; i++){
+        Token *param_identifier = dynarr_get_ptr(params, i);
+
+        scope_manager_define_local(
+            manager,
+            1,
+            1,
+            param_identifier
+        );
+    }
+
+    block->stmts_len = stmts_len;
+
+    for (size_t i = 0; i < stmts_len; i++){
+        Stmt *stmt = dynarr_get_ptr(stmts, i);
+        block->current_stmt = i + 1;
+
+        compile_stmt(compiler, stmt);
+    }
+
+    Stmt *last_stmt = stmts_len > 0 ? DYNARR_GET_PTR_AS(stmts, Stmt, stmts_len - 1) : NULL;
+
+    if(last_stmt && last_stmt->type != RETURN_STMT_TYPE){
+        write_chunk(compiler, OP_EMPTY);
+        write_location(compiler, identifier);
+        write_chunk(compiler, OP_RET);
+        write_location(compiler, identifier);
+    }
+
+    pop_block(compiler);
+    pop_unit(compiler);
+    scope_manager_pop(manager);
+    scope_manager_pop_scopes(manager, NULL);
+}
+
 void import_stmt(Compiler *compiler, ImportStmt *import_stmt){
     ScopeManager *manager = compiler->manager;
 
@@ -2359,420 +2970,45 @@ ACKNOWLEDGE:
     lzarena_restore(compiler_arena, compiler_arena_state);
 }
 
-void while_stmt(Compiler *compiler, WhileStmt *while_stmt){
-    ScopeManager *manager = compiler->manager;
+void export_stmt(Compiler *compiler, ExportStmt *export_stmt){
+    Token *export_token = export_stmt->export_token;
+    DynArr *symbols = export_stmt->symbols;
+    size_t symbols_len = symbols ? dynarr_len(symbols) : 0;
 
-    Token *while_token = while_stmt->while_token;
-    Expr *condition_expr = while_stmt->condition_expr;
-    DynArr *stmts = while_stmt->stmts;
+    for (size_t i = 0; i < symbols_len; i++){
+        Token *symbol_token = dynarr_get_ptr(symbols, i);
 
-    size_t stmts_len = stmts ? dynarr_len(stmts) : 0;
-    int32_t while_id = generate_id(compiler);
-
-    label(compiler, while_token, ".WHILE_%"PRId32":CONDITION", while_id);
-
-    compile_expr(compiler, condition_expr);
-
-    jif(compiler, while_token, ".WHILE_%"PRId32":END", while_id);
-
-    scope_manager_push(manager, WHILE_SCOPE_KIND);
-    push_loop(compiler, while_id);
-
-    Block *block = push_block(compiler);
-
-    block->stmts_len = stmts_len;
-
-    for (size_t i = 0; i < stmts_len; i++){
-        Stmt *stmt = dynarr_get_ptr(stmts, i);
-
-        block->current_stmt = i + 1;
-
-        compile_stmt(compiler, stmt);
+        write_chunk(compiler, OP_GLOBAL_ACCESS_SET);
+        write_location(compiler, export_token);
+        write_str_alloc(compiler, symbol_token->lexeme_len, symbol_token->lexeme);
+        write_chunk(compiler, 1);
     }
-
-    pop_locals(compiler);
-
-    jmp(compiler, while_token, ".WHILE_%"PRId32":CONDITION", while_id);
-    label(compiler, while_token, ".WHILE_%"PRId32":END", while_id);
-
-    pop_block(compiler);
-    pop_loop(compiler);
-    scope_manager_pop(manager);
-}
-
-void for_stmt(Compiler *compiler, ForStmt *for_stmt){
-    ScopeManager *manager = compiler->manager;
-
-    Token *for_token = for_stmt->for_token;
-    DynArr *initializations = for_stmt->initializations;
-    Expr *condition_expr = for_stmt->condition_expr;
-    DynArr *update_exprs = for_stmt->update_exprs;
-    DynArr *stmts = for_stmt->stmts;
-
-    int32_t for_id = generate_id(compiler);
-    size_t initializations_len = initializations ? dynarr_len(initializations) : 0;
-    size_t update_exprs_len = update_exprs ? dynarr_len(update_exprs) : 0;
-    size_t stmts_len = stmts ? dynarr_len(stmts) : 0;
-
-    scope_manager_push(manager, BLOCK_SCOPE_KIND);
-
-    for (size_t i = 0; i < initializations_len; i++){
-        VarDeclStmt *var_decl_stmt = DYNARR_GET_PTR_AS(initializations, VarDeclStmt, i);
-
-        compile_expr(compiler, var_decl_stmt->initial_value_expr);
-        scope_manager_define_local(manager, 1, 1, var_decl_stmt->identifier_token);
-    }
-
-    label(compiler, for_token, ".FOR_%"PRId32":CONDITION", for_id);
-
-    if(condition_expr){
-        compile_expr(compiler, condition_expr);
-        jif(compiler, for_token, ".FOR_%"PRId32":EXIT", for_id);
-    }
-
-    scope_manager_push(manager, FOR_SCOPE_KIND);
-    push_loop(compiler, for_id);
-
-    Block *block = push_block(compiler);
-
-    for (size_t i = 0; i < stmts_len; i++){
-        Stmt *stmt = DYNARR_GET_PTR_AS(stmts, Stmt, i);
-
-        block->current_stmt = i + 1;
-
-        compile_stmt(compiler, stmt);
-    }
-
-    pop_locals(compiler);
-
-    for (size_t i = 0; i < update_exprs_len; i++){
-        Expr *update_expr = DYNARR_GET_PTR_AS(update_exprs, Expr, i);
-
-        compile_expr(compiler, update_expr);
-        write_chunk(compiler, OP_POP);
-        write_location(compiler, for_token);
-    }
-
-    jmp(compiler, for_token, ".FOR_%"PRId32":CONDITION", for_id);
-    label(compiler, for_token, ".FOR_%"PRId32":END", for_id);
-
-    pop_locals(compiler);
-    pop_block(compiler);
-    pop_loop(compiler);
-    scope_manager_pop(manager);
-
-    label(compiler, for_token, ".FOR_%"PRId32":EXIT", for_id);
-
-    pop_locals(compiler);
-    scope_manager_pop(manager);
-}
-
-void return_stmt(Compiler *compiler, ReturnStmt *ret_stmt){
-    ScopeManager *manager = compiler->manager;
-
-    Token *ret_token = ret_stmt->return_token;
-    Expr *ret_expr = ret_stmt->ret_expr;
-
-    if(scope_manager_is_global_scope(manager)){
-        error(
-            compiler,
-            ret_token,
-            "Return statements not allowed in global scope"
-        );
-    }
-
-    Block *block = peek_block(compiler);
-    Scope *scope = scope_manager_peek(compiler->manager);
-
-    if(block->current_stmt < block->stmts_len){
-        error(
-            compiler,
-            ret_token,
-            "Return statements must be the last in the scope"
-        );
-    }
-
-    assert(IS_LOCAL_SCOPE(scope) && "Scope must be local");
-    AS_LOCAL_SCOPE(scope)->returned = 1;
-
-    if(ret_expr){
-        if(ret_expr->type == IDENTIFIER_EXPR_TYPE){
-            IdentifierExpr *identifier_expr = ret_expr->sub_expr;
-            Token *identifier_token = identifier_expr->identifier_token;
-            Symbol *symbol = scope_manager_get_symbol(compiler->manager, identifier_token);
-
-            if(symbol->kind == MODULE_SYMBOL_KIND){
-                error(
-                    compiler,
-                    identifier_token,
-                    "Cannot return modules"
-                );
-            }
-        }
-
-        compile_expr(compiler, ret_expr);
-    }
-
-    write_chunk(compiler, OP_RET);
-    write_location(compiler, ret_token);
 }
 
 void compile_stmt(Compiler *compiler, Stmt *stmt){
-    ScopeManager *manager = compiler->manager;
-
     switch (stmt->type){
         case EXPR_STMT_TYPE:{
-            ExprStmt *expr_stmt = stmt->sub_stmt;
-            Expr *sub_expr = expr_stmt->expr;
-
-            compile_expr(compiler, sub_expr);
-            write_chunk(compiler, OP_POP);
+            expr_stmt(compiler, (ExprStmt *)stmt->sub_stmt);
 
             break;
         }case VAR_DECL_STMT_TYPE:{
-            VarDeclStmt *var_decl_stmt = stmt->sub_stmt;
-            uint8_t is_mutable = var_decl_stmt->is_mutable;
-            uint8_t is_initialized = var_decl_stmt->is_initialized;
-            Token *identifier_token = var_decl_stmt->identifier_token;
-            Expr *initial_value_expr = var_decl_stmt->initial_value_expr;
-
-            if(scope_manager_exists_procedure_name(
-                manager,
-                identifier_token->lexeme_len,
-                identifier_token->lexeme
-            )){
-                error(
-                    compiler,
-                    identifier_token,
-                    "Cannot shadow procedures name"
-                );
-            }
-
-            if(initial_value_expr){
-                compile_expr(compiler, initial_value_expr);
-            }else{
-                write_chunk(compiler, OP_EMPTY);
-            }
-
-            if(scope_manager_is_global_scope(manager)){
-                if(!is_mutable && !is_initialized){
-                    error(
-                        compiler,
-                        identifier_token,
-                        "Immutable global variables must be initialized in declaration place"
-                    );
-                }
-
-                scope_manager_define_global(
-                    manager,
-                    is_mutable,
-                    identifier_token
-                );
-
-                write_chunk(compiler, OP_GLOBAL_DEF);
-                write_location(compiler, identifier_token);
-                write_str_alloc(
-                    compiler,
-                    identifier_token->lexeme_len,
-                    identifier_token->lexeme
-                );
-            }else{
-                scope_manager_define_local(
-                    manager,
-                    is_mutable,
-                    is_initialized,
-                    identifier_token
-                );
-            }
+            var_decl_stmt(compiler, (VarDeclStmt *)stmt->sub_stmt);
 
             break;
         }case BLOCK_STMT_TYPE:{
-            BlockStmt *block_stmt = stmt->sub_stmt;
-            DynArr *stmts = block_stmt->stmts;
-
-            size_t stmts_len = stmts ? dynarr_len(stmts) : 0;
-
-            if(scope_manager_is_global_scope(manager)){
-                error(
-                    compiler,
-                    block_stmt->left_bracket_token,
-                    "Block statements not allowed in global scope"
-                );
-            }
-
-            Scope *scope = scope_manager_push(manager, BLOCK_SCOPE_KIND);
-            Block *block = push_block(compiler);
-
-            block->stmts_len = stmts_len;
-
-            for (size_t i = 0; i < stmts_len; i++){
-            	if(AS_LOCAL_SCOPE(scope)->returned){
-           			error(
-              			compiler,
-                 		block_stmt->left_bracket_token,
-                   		"Cannot exists statements after the scope returned"
-             		);
-             	}
-
-             	Stmt *stmt = dynarr_get_ptr(stmts, i);
-                block->current_stmt = i + 1;
-
-                compile_stmt(compiler, stmt);
-            }
-
-            propagate_return(compiler, scope);
-
-            pop_locals(compiler);
-            pop_block(compiler);
-            scope_manager_pop(manager);
+            block_stmt(compiler, (BlockStmt *)stmt->sub_stmt);
 
             break;
         }case IF_STMT_TYPE:{
-            IfStmt *if_stmt = stmt->sub_stmt;
-            IfStmtBranch *if_branch = if_stmt->if_branch;
-            DynArr *elif_branches = if_stmt->elif_branches;
-            DynArr *else_stmts = if_stmt->else_stmts;
-            size_t elif_branches_len = elif_branches ? dynarr_len(elif_branches) : 0;
-            int32_t if_id = generate_id(compiler);
-
-            size_t branches_len = 1 + (elif_branches ? dynarr_len(elif_branches) : 0) + (else_stmts ? 1 : 0);
-            uint16_t returns = compile_if_branch(compiler, if_branch, IF_SCOPE_KIND, if_id, 0) ? 1 : 0;
-
-            for (size_t i = 0; i < elif_branches_len; i++){
-                IfStmtBranch *elif_branch = dynarr_get_ptr(elif_branches, i);
-
-                if(compile_if_branch(
-                	compiler,
-                 	elif_branch,
-                  	ELIF_SCOPE_KIND,
-                   	if_id,
-                    i + 1
-                )){
-               		returns++;
-                }
-            }
-
-            if(else_stmts){
-                size_t else_stmts_len = dynarr_len(else_stmts);
-
-                Scope *scope = scope_manager_push(manager, ELSE_SCOPE_KIND);
-                Block *block = push_block(compiler);
-
-                block->current_stmt = else_stmts_len;
-
-                for (size_t i = 0; i < else_stmts_len; i++){
-	               	if(AS_LOCAL_SCOPE(scope)->returned){
-	             		error(
-	                		compiler,
-	                   		if_branch->branch_token,
-	                     	"Cannot exists statements after the scope returned"
-	               		);
-	               	}
-
-                    Stmt *stmt = dynarr_get_ptr(else_stmts, i);
-                    block->current_stmt = i + 1;
-
-                    compile_stmt(compiler, stmt);
-                }
-
-                if(AS_LOCAL_SCOPE(scope)->returned){
-               		returns++;
-                }
-
-                if(returns == branches_len){
-               		propagate_return(compiler, scope);
-                }
-
-                pop_block(compiler);
-                pop_locals(compiler);
-                scope_manager_pop(manager);
-            }
-
-            label(compiler, if_branch->branch_token, ".IF(%"PRId32")_END", if_id);
+            if_stmt(compiler, (IfStmt *)stmt->sub_stmt);
 
             break;
         }case STOP_STMT_TYPE:{
-            StopStmt *stop_stmt = stmt->sub_stmt;
-            Token *stop_token = stop_stmt->stop_token;
-
-            Scope *scope = scope_manager_is_loop(manager);
-
-            if(scope){
-                size_t locals_count = scope->symbols->n;
-
-                assert(locals_count <= UINT8_MAX);
-
-                write_chunk(compiler, OP_OFFSET);
-                write_location(compiler, stop_token);
-                write_chunk(compiler, (uint8_t)locals_count);
-
-                if(scope->type == WHILE_SCOPE_KIND){
-                    jmp(compiler, stop_token, ".WHILE_%"PRId32":END", peek_loop(compiler)->id);
-
-                    break;
-                }
-
-                if(scope->type == FOR_SCOPE_KIND){
-                    jmp(compiler, stop_token, ".FOR_%"PRId32":END", peek_loop(compiler)->id);
-
-                    break;
-                }
-
-                assert(0 && "Illegal loop scope kind");
-            }
-
-            error(
-                compiler,
-                stop_token,
-                "Stop statements only allowed in while and for loops"
-            );
+            stop_stmt(compiler, (StopStmt *)stmt->sub_stmt);
 
             break;
         }case CONTINUE_STMT_TYPE:{
-            ContinueStmt *continue_stmt = stmt->sub_stmt;
-            Token *continue_token = continue_stmt->continue_token;
-
-            Scope *scope = scope_manager_is_loop(manager);
-
-            if(scope){
-                size_t locals_count = scope->symbols->n;
-
-                assert(locals_count <= UINT8_MAX);
-
-                write_chunk(compiler, OP_OFFSET);
-                write_location(compiler, continue_token);
-                write_chunk(compiler, (uint8_t)locals_count);
-
-                if(scope->type == WHILE_SCOPE_KIND){
-                    jmp(
-                        compiler,
-                        continue_token,
-                        ".WHILE_%"PRId32":CONDITION",
-                        peek_loop(compiler)->id
-                    );
-
-                    break;
-                }
-
-                if(scope->type == FOR_SCOPE_KIND){
-                    jmp(
-                        compiler,
-                        continue_token,
-                        ".FOR_%"PRId32":CONDITION",
-                        peek_loop(compiler)->id
-                    );
-
-                    break;
-                }
-
-                assert(0 && "Illegal loop scope kind");
-            }
-
-            error(
-                compiler,
-                continue_token,
-                "Continue statements only allowed in while and for loops"
-            );
+            continue_stmt(compiler, (ContinueStmt *)stmt->sub_stmt);
 
             break;
         }case WHILE_STMT_TYPE:{
@@ -2784,116 +3020,11 @@ void compile_stmt(Compiler *compiler, Stmt *stmt){
 
             break;
         }case THROW_STMT_TYPE:{
-            ThrowStmt *throw_stmt = stmt->sub_stmt;
-            Token *throw_token = throw_stmt->throw_token;
-            Expr *throw_value_expr = throw_stmt->value_expr;
-
-            if(IS_GLOBAL_SCOPE(scope_manager_peek(manager))){
-                error(
-                    compiler,
-                    throw_token,
-                    "Cannot use throw statements in global scope"
-                );
-            }
-
-            if(throw_value_expr){
-                compile_expr(compiler, throw_value_expr);
-            }else{
-                write_chunk(compiler, OP_EMPTY);
-                write_location(compiler, throw_token);
-            }
-
-            write_chunk(compiler, OP_THROW);
-            write_location(compiler, throw_token);
+            throw_stmt(compiler, (ThrowStmt *)stmt->sub_stmt);
 
             break;
         }case TRY_STMT_TYPE:{
-            TryStmt *try_stmt = stmt->sub_stmt;
-            Token *try_token = try_stmt->try_token;
-            DynArr *try_stmts = try_stmt->try_stmts;
-            Token *catch_token = try_stmt->catch_token;
-            Token *err_identifier = try_stmt->err_identifier;
-            DynArr *catch_stmts = try_stmt->catch_stmts;
-
-            size_t try_stmts_len = dynarr_len(try_stmts);
-            size_t catch_stmts_len = dynarr_len(catch_stmts);
-
-            if(scope_manager_peek(manager)->type == CATCH_SCOPE_KIND){
-                error(
-                    compiler,
-                    try_token,
-                    "Cannot use try statements inside catch blocks"
-                );
-            }
-
-            uint32_t try_id = generate_id(compiler);
-
-            //---------- TRY BLOCK ----------//
-            Scope *try_scope = scope_manager_push(manager, TRY_SCOPE_KIND);
-            Block *try_block = push_block(compiler);
-
-            write_chunk(compiler, OP_TRY_IN);
-            write_location(compiler, try_token);
-            mark(compiler, try_token, "CATCH(%"PRId32")", try_id);
-
-            try_block->stmts_len = try_stmts_len;
-
-            for (size_t i = 0; i < try_stmts_len; i++){
-                if(AS_LOCAL_SCOPE(try_scope)->returned){
-                    error(
-                        compiler,
-                        try_token,
-                        "Cannot exists statements after the scope returned"
-                    );
-                }
-
-                try_block->current_stmt = i + 1;
-
-                compile_stmt(compiler, dynarr_get_ptr(try_stmts, i));
-            }
-
-            pop_locals(compiler);
-            write_chunk(compiler, OP_TRY_OUT);
-            write_location(compiler, try_token);
-
-            jmp(compiler, try_token, "CATCH(%"PRId32")_END", try_id);
-
-            pop_block(compiler);
-            scope_manager_pop(manager);
-
-            //---------- CATCH BLOCK ----------//
-            Scope *catch_scope = scope_manager_push(manager, CATCH_SCOPE_KIND);
-
-            if(err_identifier){
-                scope_manager_define_local(manager, 0, 1, err_identifier);
-            }
-
-            Block *catch_block = push_block(compiler);
-
-            label(compiler, catch_token, "CATCH(%"PRId32")", try_id);
-
-            catch_block->stmts_len = catch_stmts_len;
-
-            for (size_t i = 0; i < catch_stmts_len; i++){
-                if(AS_LOCAL_SCOPE(catch_scope)->returned){
-                    error(
-                        compiler,
-                        catch_token,
-                        "Cannot exists statements after the scope returned"
-                    );
-                }
-
-                catch_block->current_stmt = i + 1;
-
-                compile_stmt(compiler, dynarr_get_ptr(catch_stmts, i));
-            }
-
-            pop_locals(compiler);
-
-            label(compiler, catch_token, "CATCH(%"PRId32")_END", try_id);
-
-            pop_block(compiler);
-            scope_manager_pop(manager);
+            try_stmt(compiler, (TryStmt *)stmt->sub_stmt);
 
             break;
         }case RETURN_STMT_TYPE:{
@@ -2901,80 +3032,7 @@ void compile_stmt(Compiler *compiler, Stmt *stmt){
 
             break;
         }case PROC_STMT_TYPE:{
-            ProcStmt *proc_stmt = stmt->sub_stmt;
-            Token *identifier = proc_stmt->identifier;
-            DynArr *params = proc_stmt->params;
-            DynArr *stmts = proc_stmt->stmts;
-
-            if(!scope_manager_is_global_scope(manager)){
-                error(
-                    compiler,
-                    identifier,
-                    "Procedures declarations only allowed in global scope"
-                );
-            }
-
-            size_t params_len = params ? dynarr_len(params) : 0;
-            size_t stmts_len = stmts ? dynarr_len(stmts) : 0;
-
-            Module *module = current_module(compiler);
-            Fn *fn = vm_factory_module_fn_create(
-                compiler->rtallocator,
-                module,
-                identifier->lexeme,
-                params_len,
-                NULL
-            );
-            FnObj *fn_obj = vm_factory_fn_obj_create(compiler->rtallocator, fn);
-            FnSymbol *fn_symbol = (FnSymbol *)scope_manager_get_symbol(manager, identifier);
-
-            fn_symbol->params_count = (uint8_t)params_len;
-
-            vm_factory_module_globals_add_obj(
-            	module,
-             	(Obj *)fn_obj,
-              	identifier->lexeme,
-               	PRIVATE_GLOBAL_VALUE_TYPE
-            );
-
-            scope_manager_push_scopes(manager);
-            scope_manager_push(manager, FN_SCOPE_KIND);
-            push_unit(compiler, fn);
-            Block *block = push_block(compiler);
-
-            for (size_t i = 0; i < params_len; i++){
-                Token *param_identifier = dynarr_get_ptr(params, i);
-
-                scope_manager_define_local(
-                    manager,
-                    1,
-                    1,
-                    param_identifier
-                );
-            }
-
-            block->stmts_len = stmts_len;
-
-            for (size_t i = 0; i < stmts_len; i++){
-             	Stmt *stmt = dynarr_get_ptr(stmts, i);
-                block->current_stmt = i + 1;
-
-                compile_stmt(compiler, stmt);
-            }
-
-            Stmt *last_stmt = stmts_len > 0 ? DYNARR_GET_PTR_AS(stmts, Stmt, stmts_len - 1) : NULL;
-
-            if(last_stmt && last_stmt->type != RETURN_STMT_TYPE){
-                write_chunk(compiler, OP_EMPTY);
-                write_location(compiler, identifier);
-                write_chunk(compiler, OP_RET);
-                write_location(compiler, identifier);
-            }
-
-            pop_block(compiler);
-            pop_unit(compiler);
-            scope_manager_pop(manager);
-            scope_manager_pop_scopes(manager, NULL);
+            proc_stmt(compiler, (ProcStmt *)stmt->sub_stmt);
 
             break;
         }case IMPORT_STMT_TYPE:{
@@ -2982,23 +3040,12 @@ void compile_stmt(Compiler *compiler, Stmt *stmt){
 
             break;
         }case EXPORT_STMT_TYPE:{
-            ExportStmt *export_stmt = stmt->sub_stmt;
-            Token *export_token = export_stmt->export_token;
-            DynArr *symbols = export_stmt->symbols;
-            size_t symbols_len = symbols ? dynarr_len(symbols) : 0;
-
-            for (size_t i = 0; i < symbols_len; i++){
-                Token *symbol_token = dynarr_get_ptr(symbols, i);
-
-                write_chunk(compiler, OP_GLOBAL_ACCESS_SET);
-                write_location(compiler, export_token);
-                write_str_alloc(compiler, symbol_token->lexeme_len, symbol_token->lexeme);
-                write_chunk(compiler, 1);
-            }
+            export_stmt(compiler, (ExportStmt *)stmt->sub_stmt);
 
             break;
         }default:{
             assert(0 && "Illegal token type");
+
             break;
         }
     }
