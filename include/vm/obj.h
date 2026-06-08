@@ -96,7 +96,7 @@ struct fn_obj{
 
 struct closure_obj{
     Obj     header;
-    Closure *closure;
+    Closure closure;
 };
 
 struct native_module_obj{

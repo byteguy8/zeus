@@ -53,9 +53,8 @@ struct frame{
 };
 
 typedef struct shadow_frame{
-    const Closure *closure;
-    ForeignValue  *foreigns_head;
-    ForeignValue  *foreigns_tail;
+    Closure     *closure;
+    ClosureList closures;
 }ShadowFrame;
 
 typedef struct template{
@@ -170,6 +169,56 @@ static void mark_obj(VM *vm, Obj *obj);
 static void mark_objs(VM *vm);
 static void sweep_objs(VM *vm);
 static void normalize_objs(VM *vm);
+
+//> PRIVATE INTERFACE
+// UTILS FUNCTIONS
+static int16_t compose_i16(uint8_t *bytes);
+static int32_t compose_i32(uint8_t *bytes);
+static int16_t read_i16(VM *vm);
+static int32_t read_i32(VM *vm);
+static int64_t read_i64_const(VM *vm);
+static double read_f64_const(VM *vm);
+static char *read_str_const(VM *vm, size_t *out_len);
+//----------     STACK RELATED FUNCTIONS     ----------//
+static Value peek(VM *vm);
+static Value peek_at(VM *vm, uint16_t offset);
+static Value *peek_at_ptr(VM *vm, uint16_t offset);
+static void push(VM *vm, Value value);
+#define PUSH_EMPTY(_vm)         (push((_vm), EMPTY_VALUE))
+#define PUSH_BOOL(_vm, _value)  (push((_vm), BOOL_VALUE(_value)))
+#define PUSH_INT(_vm, _value)   (push((_vm), INT_VALUE(_value)))
+#define PUSH_FLOAT(_vm, _value) (push((_vm), FLOAT_VALUE(_value)))
+#define PUSH_OBJ(_vm, _obj)     (push((_vm), OBJ_VALUE((Obj *)(_obj))))
+static FnObj *push_fn(VM *vm, Fn *fn);
+static Value pop(VM *vm);
+//----------     FRAMES RELATED FUNCTIONS     ----------//
+static Frame *peek_frame(const VM *vm);
+static Frame *push_frame(VM *vm, uint8_t argsc);
+static ShadowFrame *peek_shadow_frame(const VM *vm);
+
+#define VM_CURRENT_FN(_vm)      (peek_frame(vm)->fn)
+#define VM_CURRENT_MODULE(_vm)  (VM_CURRENT_FN(_vm)->module)
+#define VM_CURRENT_ICONSTS(_vm) (VM_CURRENT_FN(_vm)->iconsts)
+#define VM_CURRENT_FCONSTS(_vm) (VM_CURRENT_FN(_vm)->fconsts)
+#define VM_CURRENT_SCONSTS(_vm) (VM_CURRENT_MODULE(_vm)->context->str_consts)
+#define VM_CURRENT_GLOBALS(_vm) (VM_CURRENT_MODULE(_vm)->context->globals)
+#define VM_CURRENT_CLOSURE(_vm) (peek_shadow_frame(vm)->closure)
+
+static uint8_t advance(VM *vm);
+static uint8_t advance_save(VM *vm);
+static uint8_t *advance_by_ptr(VM *vm, size_t by);
+
+static void add_closure_to_list(VM *vm, ClosureList *closures_list, Closure *closure);
+static Closure *remove_closure_from_list(VM *vm, ClosureList *closures_list, Closure *closure);
+
+static void call_fn(uint8_t argsc, const Fn *fn, VM *vm);
+static void call_closure(uint8_t argsc, Closure *closure, VM *vm);
+static void pop_frame(VM *vm);
+static Value *frame_local(uint8_t which, VM *vm);
+// OTHERS
+static ClosureObj *init_closure(VM *vm, ClosureInf *closure);
+static int execute(VM *vm);
+//< PRIVATE INTERFACE
 
 //------------------------------------------------------------------------------------//
 //                               PRIVATE IMPLEMENTATION                               //
@@ -424,16 +473,24 @@ inline void destroy_fn(VM *vm, FnObj *fn_obj){
 void destroy_closure(VM *vm, ClosureObj *closure_obj){
     assert(closure_obj);
 
-    Closure *closure = closure_obj->closure;
-    ForeignValue *out_values = closure->foreigns;
-    size_t locals_len = closure->locals_len;
+    Closure *closure = &closure_obj->closure;
+    size_t locals_len = closure->inf.locals_len;
+    ForeingValue *foreigns = closure->foreigns;
 
-    for (size_t i = 0; i < locals_len; i++){
-        destroy_value((&out_values[i])->value);
+    if(closure->list){
+        remove_closure_from_list(vm, closure->list, closure);
+
+        goto CLEAN_UP;
     }
 
-    MEMORY_DEALLOC(vm_allocator(vm), ForeignValue, locals_len, out_values);
-    lzpool_dealloc(closure);
+    for (size_t i = 0; i < locals_len; i++){
+        ForeingValue *foreign = &foreigns[i];
+
+        destroy_value(foreign->value);
+    }
+
+CLEAN_UP:
+    MEMORY_DEALLOC(vm_allocator(vm), Closure, locals_len, foreigns);
     lzpool_dealloc(closure_obj);
 }
 
@@ -738,6 +795,296 @@ void normalize_objs(VM *vm){
     }
 }
 
+//> PRIVATE IMPLEMENTATION
+inline int16_t compose_i16(uint8_t *bytes){
+    return (int16_t)((uint16_t)bytes[0] << 8) | ((uint16_t)bytes[1]);
+}
+
+inline int32_t compose_i32(uint8_t *bytes){
+    return (int32_t)((uint32_t)bytes[0] << 24) | ((uint32_t)bytes[1] << 16) | ((uint32_t)bytes[2] << 8) | ((uint32_t)bytes[3]);
+}
+
+inline int16_t read_i16(VM *vm){
+    uint8_t *bytes = advance_by_ptr(vm, 2);
+
+    return compose_i16(bytes);
+}
+
+inline int32_t read_i32(VM *vm){
+	uint8_t *bytes = advance_by_ptr(vm, 4);
+
+	return compose_i32(bytes);
+}
+
+inline int64_t read_i64_const(VM *vm){
+    DynArr *iconsts = VM_CURRENT_ICONSTS(vm);
+    size_t idx = (size_t)read_i16(vm);
+
+    return DYNARR_GET_AS(iconsts, int64_t, idx);
+}
+
+inline double read_f64_const(VM *vm){
+    DynArr *fconsts = VM_CURRENT_FCONSTS(vm);
+    size_t idx = (size_t)read_i16(vm);
+
+    return DYNARR_GET_AS(fconsts, double, idx);
+}
+
+char *read_str_const(VM *vm, size_t *out_len){
+    DynArr *str_consts = VM_CURRENT_SCONSTS(vm);
+    size_t idx = (size_t)read_i16(vm);
+
+    if(idx >= dynarr_len(str_consts)){
+        internal_error(vm, "Failed to get string constant: index out of bounds");
+    }
+
+    DStr str_const = DYNARR_GET_AS(str_consts, DStr, idx);
+
+    *out_len = str_const.len;
+
+    return str_const.buff;
+}
+
+inline Value peek(VM *vm){
+    return *(vm->stack_top - 1);
+}
+
+inline Value peek_at(VM *vm, uint16_t offset){
+    if(vm->stack_top - 1 - offset <= vm->value_stack){
+        internal_error( vm, "Illegal stack peek offset");
+    }
+
+    return *(vm->stack_top - 1 - offset);
+}
+
+inline Value *peek_at_ptr(VM *vm, uint16_t offset){
+    if(vm->stack_top - 1 - offset <= vm->value_stack){
+        internal_error(vm, "Illegal stack peek offset");
+    }
+
+    return vm->stack_top - 1 - offset;
+}
+
+inline void push(VM *vm, Value value){
+    if(vm->stack_top >= vm->value_stack + STACK_LENGTH){
+        vm_error(vm, "Stack over flow");
+    }
+
+    *((vm->stack_top)++) = value;
+}
+
+inline FnObj *push_fn(VM *vm, Fn *fn){
+    FnObj *fn_obj = vm_create_fn(vm, fn);
+
+    PUSH_OBJ(vm, fn_obj);
+
+    return fn_obj;
+}
+
+inline Value pop(VM *vm){
+    if(vm->stack_top == vm->value_stack){
+        vm_error(vm, "Stack under flow");
+    }
+
+    return *(--vm->stack_top);
+}
+
+inline Frame *peek_frame(const VM *vm){
+    return vm->frame_top - 1;
+}
+
+Frame *push_frame(VM *vm, uint8_t argsc){
+    if(vm->frame_top >= vm->frame_stack + FRAME_LENGTH){
+        vm_error(vm, "Frame stack is full");
+    }
+
+    Frame *frame = vm->frame_top++;
+
+    *frame = (Frame){
+        .locals  = vm->stack_top - 1 - argsc
+    };
+
+    vm->shadow_frame_top++;
+
+    return frame;
+}
+
+inline ShadowFrame *peek_shadow_frame(const VM *vm){
+    return vm->shadow_frame_top - 1;
+}
+
+inline uint8_t advance(VM *vm){
+    Frame *frame = peek_frame(vm);
+
+    return DYNARR_GET_AS(frame->fn->chunks, uint8_t, frame->ip++);
+}
+
+inline uint8_t advance_save(VM *vm){
+    Frame *frame = peek_frame(vm);
+    size_t at = frame->prev_ip = frame->ip++;
+    uint8_t chunk = DYNARR_GET_AS(frame->fn->chunks, uint8_t, at);
+
+    return chunk;
+}
+
+inline uint8_t *advance_by_ptr(VM *vm, size_t by){
+    Frame *frame = peek_frame(vm);
+
+    return (uint8_t *)dynarr_get_raw(frame->fn->chunks, (frame->ip += by) - by);
+}
+
+void add_closure_to_list(VM *vm, ClosureList *closures, Closure *closure){
+    if(closures->tail){
+        closures->tail->next = closure;
+        closure->prev = closures->tail;
+    }else{
+        closures->head = closure;
+    }
+
+    closures->tail = closure;
+    closure->list = closures;
+}
+
+Closure *remove_closure_from_list(VM *vm, ClosureList *closures_list, Closure *closure){
+    if(closure == closures_list->head){
+        closures_list->head = closure->next;
+    }
+    if(closure == closures_list->tail){
+        closures_list->tail = closure->prev;
+    }
+
+    if(closure->prev){
+        closure->prev->next = closure->next;
+    }
+    if(closure->next){
+        closure->next->prev = closure->prev;
+    }
+
+    closure->list = NULL;
+    closure->prev = NULL;
+    closure->next = NULL;
+
+    return closures_list->head;
+}
+
+inline void call_fn(uint8_t argsc, const Fn *fn, VM *vm){
+    size_t params_count = fn->arity;
+
+    if(argsc != params_count){
+        vm_error(
+            vm,
+            "Failed to call function '%s'. Declared with %d parameter(s), but got %d argument(s)",
+            fn->name,
+            params_count,
+            argsc
+        );
+    }
+
+    push_frame(vm, argsc)->fn = fn;
+}
+
+inline void call_closure(uint8_t argsc, Closure *closure, VM *vm){
+    Fn *fn = closure->inf.fn;
+    size_t params_count = fn->arity;
+
+    if(argsc != params_count){
+        vm_error(
+            vm,
+            "Failed to call closure '%s'. Declared with %d parameter(s), but got %d argument(s)",
+            fn->name,
+            params_count,
+            argsc
+        );
+    }
+
+    Frame *frame = push_frame(vm, argsc);
+    ShadowFrame *shadow_frame = peek_shadow_frame(vm);
+
+    frame->fn = fn;
+    shadow_frame->closure = closure;
+}
+
+inline void pop_frame(VM *vm){
+    if(vm->frame_top == vm->frame_stack){
+        vm_error(
+            vm,
+            "Frame stack is empty"
+        );
+    }
+
+    vm->frame_top--;
+    vm->shadow_frame_top--;
+}
+
+inline Value *frame_local(uint8_t which, VM *vm){
+    Frame *frame = peek_frame(vm);
+    Value *locals = frame->locals;
+    Value *local = locals + 1 + which;
+
+    if(local >= vm->stack_top){
+        internal_error(vm, "Illegal frame local offset: %"PRId8"", which);
+    }
+
+    return local;
+}
+
+#define BINARY_OP(_vm, _OPERATOR)                                                          \
+    Value right_value = pop(_vm);                                                          \
+    Value left_value = pop(_vm);                                                           \
+                                                                                           \
+    if(IS_VALUE_INT(left_value) && IS_VALUE_INT(right_value)){                             \
+        PUSH_INT(_vm, VALUE_TO_INT(left_value) _OPERATOR VALUE_TO_INT(right_value));       \
+    }else if(IS_VALUE_FLOAT(left_value) && IS_VALUE_FLOAT(right_value)){                   \
+        PUSH_FLOAT(_vm, VALUE_TO_FLOAT(left_value) _OPERATOR VALUE_TO_FLOAT(right_value)); \
+    }else if(IS_VALUE_INT(left_value) && IS_VALUE_FLOAT(right_value)){                     \
+        PUSH_FLOAT(_vm, VALUE_TO_INT(left_value) _OPERATOR VALUE_TO_FLOAT(right_value));   \
+    }else if(IS_VALUE_FLOAT(left_value) && IS_VALUE_INT(right_value)){                     \
+        PUSH_FLOAT(_vm, VALUE_TO_FLOAT(left_value) _OPERATOR VALUE_TO_INT(right_value));   \
+    }else{                                                                                 \
+        vm_error(                                                                          \
+            vm,                                                                            \
+            "Illegal operands types for %s operator",                                      \
+            #_OPERATOR                                                                     \
+        );                                                                                 \
+    }
+
+static int compare_closure_foreigns(const void *a, const void *b){
+    ForeingValue *foreign_a = (ForeingValue *)a;
+    ForeingValue *foreign_b = (ForeingValue *)b;
+    uint8_t local_a = foreign_a->local;
+    uint8_t local_b = foreign_b->local;
+
+    if(local_a == local_b){
+        return 0;
+    }else{
+        return local_a > local_b ? 1 : -1;
+    }
+}
+
+ClosureObj *init_closure(VM *vm, ClosureInf *closure_inf){
+    ClosureList *closures_list = &peek_shadow_frame(vm)->closures;
+    ClosureObj *closure_obj = vm_create_closure(vm, closure_inf);
+    ForeingValue *foreigns = closure_obj->closure.foreigns;
+    size_t locals_len = closure_inf->locals_len;
+
+    for (size_t i = 0; i < locals_len; i++){
+        ForeingValue *foreign = &foreigns[i];
+        uint8_t local = closure_inf->locals[i];
+        Value *value = frame_local(local, vm);
+
+        assert(value);
+
+        *foreign = (ForeingValue){
+            .local = local,
+            .value = value
+        };
+    }
+
+    add_closure_to_list(vm, closures_list, &closure_obj->closure);
+
+    return closure_obj;
+}
+
 //------------------------------------------------------------------------------------//
 //                               PUBLIC IMPLEMENTATION                                //
 //------------------------------------------------------------------------------------//
@@ -924,343 +1271,6 @@ void vm_dealloc(void *ptr, size_t size, void *ctx){
     ){
         vm->mem_use_limit = possible_new_mem_limit;
     }
-}
-
-//> PRIVATE INTERFACE
-// UTILS FUNCTIONS
-static int16_t compose_i16(uint8_t *bytes);
-static int32_t compose_i32(uint8_t *bytes);
-static int16_t read_i16(VM *vm);
-static int32_t read_i32(VM *vm);
-static int64_t read_i64_const(VM *vm);
-static double read_f64_const(VM *vm);
-static char *read_str_const(VM *vm, size_t *out_len);
-//----------     STACK RELATED FUNCTIONS     ----------//
-static Value peek(VM *vm);
-static Value peek_at(VM *vm, uint16_t offset);
-static Value *peek_at_ptr(VM *vm, uint16_t offset);
-static void push(VM *vm, Value value);
-#define PUSH_EMPTY(_vm)         (push((_vm), EMPTY_VALUE))
-#define PUSH_BOOL(_vm, _value)  (push((_vm), BOOL_VALUE(_value)))
-#define PUSH_INT(_vm, _value)   (push((_vm), INT_VALUE(_value)))
-#define PUSH_FLOAT(_vm, _value) (push((_vm), FLOAT_VALUE(_value)))
-#define PUSH_OBJ(_vm, _obj)     (push((_vm), OBJ_VALUE((Obj *)(_obj))))
-static FnObj *push_fn(VM *vm, Fn *fn);
-static Value pop(VM *vm);
-//----------     FRAMES RELATED FUNCTIONS     ----------//
-static Frame *peek_frame(const VM *vm);
-static Frame *push_frame(VM *vm, uint8_t argsc);
-static ShadowFrame *peek_shadow_frame(const VM *vm);
-
-#define VM_CURRENT_FN(_vm)      (peek_frame(vm)->fn)
-#define VM_CURRENT_MODULE(_vm)  (VM_CURRENT_FN(_vm)->module)
-#define VM_CURRENT_ICONSTS(_vm) (VM_CURRENT_FN(_vm)->iconsts)
-#define VM_CURRENT_FCONSTS(_vm) (VM_CURRENT_FN(_vm)->fconsts)
-#define VM_CURRENT_SCONSTS(_vm) (VM_CURRENT_MODULE(_vm)->context->str_consts)
-#define VM_CURRENT_GLOBALS(_vm) (VM_CURRENT_MODULE(_vm)->context->globals)
-#define VM_CURRENT_CLOSURE(_vm) (peek_shadow_frame(vm)->closure)
-
-static uint8_t advance(VM *vm);
-static uint8_t advance_save(VM *vm);
-static uint8_t *advance_by_ptr(VM *vm, size_t by);
-
-static void add_out_value_to_current_frame(VM *vm, ForeignValue *value);
-static ForeignValue *remove_value_from_current_frame(VM *vm, ForeignValue *value);
-
-static void call_fn(uint8_t argsc, const Fn *fn, VM *vm);
-static void call_closure(uint8_t argsc, Closure *closure, VM *vm);
-static void pop_frame(VM *vm);
-static Value *frame_local(uint8_t which, VM *vm);
-// OTHERS
-static ClosureObj *init_closure(VM *vm, Closure *closure);
-static int execute(VM *vm);
-//< PRIVATE INTERFACE
-//> PRIVATE IMPLEMENTATION
-inline int16_t compose_i16(uint8_t *bytes){
-    return (int16_t)((uint16_t)bytes[0] << 8) | ((uint16_t)bytes[1]);
-}
-
-inline int32_t compose_i32(uint8_t *bytes){
-    return (int32_t)((uint32_t)bytes[0] << 24) | ((uint32_t)bytes[1] << 16) | ((uint32_t)bytes[2] << 8) | ((uint32_t)bytes[3]);
-}
-
-inline int16_t read_i16(VM *vm){
-    uint8_t *bytes = advance_by_ptr(vm, 2);
-
-    return compose_i16(bytes);
-}
-
-inline int32_t read_i32(VM *vm){
-	uint8_t *bytes = advance_by_ptr(vm, 4);
-
-	return compose_i32(bytes);
-}
-
-inline int64_t read_i64_const(VM *vm){
-    DynArr *iconsts = VM_CURRENT_ICONSTS(vm);
-    size_t idx = (size_t)read_i16(vm);
-
-    return DYNARR_GET_AS(iconsts, int64_t, idx);
-}
-
-inline double read_f64_const(VM *vm){
-    DynArr *fconsts = VM_CURRENT_FCONSTS(vm);
-    size_t idx = (size_t)read_i16(vm);
-
-    return DYNARR_GET_AS(fconsts, double, idx);
-}
-
-char *read_str_const(VM *vm, size_t *out_len){
-    DynArr *str_consts = VM_CURRENT_SCONSTS(vm);
-    size_t idx = (size_t)read_i16(vm);
-
-    if(idx >= dynarr_len(str_consts)){
-        internal_error(vm, "Failed to get string constant: index out of bounds");
-    }
-
-    DStr str_const = DYNARR_GET_AS(str_consts, DStr, idx);
-
-    *out_len = str_const.len;
-
-    return str_const.buff;
-}
-
-inline Value peek(VM *vm){
-    return *(vm->stack_top - 1);
-}
-
-inline Value peek_at(VM *vm, uint16_t offset){
-    if(vm->stack_top - 1 - offset <= vm->value_stack){
-        internal_error( vm, "Illegal stack peek offset");
-    }
-
-    return *(vm->stack_top - 1 - offset);
-}
-
-inline Value *peek_at_ptr(VM *vm, uint16_t offset){
-    if(vm->stack_top - 1 - offset <= vm->value_stack){
-        internal_error(vm, "Illegal stack peek offset");
-    }
-
-    return vm->stack_top - 1 - offset;
-}
-
-inline void push(VM *vm, Value value){
-    if(vm->stack_top >= vm->value_stack + STACK_LENGTH){
-        vm_error(vm, "Stack over flow");
-    }
-
-    *((vm->stack_top)++) = value;
-}
-
-inline FnObj *push_fn(VM *vm, Fn *fn){
-    FnObj *fn_obj = vm_create_fn(vm, fn);
-
-    PUSH_OBJ(vm, fn_obj);
-
-    return fn_obj;
-}
-
-inline Value pop(VM *vm){
-    if(vm->stack_top == vm->value_stack){
-        vm_error(vm, "Stack under flow");
-    }
-
-    return *(--vm->stack_top);
-}
-
-inline Frame *peek_frame(const VM *vm){
-    return vm->frame_top - 1;
-}
-
-Frame *push_frame(VM *vm, uint8_t argsc){
-    if(vm->frame_top >= vm->frame_stack + FRAME_LENGTH){
-        vm_error(vm, "Frame stack is full");
-    }
-
-    Frame *frame = vm->frame_top++;
-
-    *frame = (Frame){
-        .locals  = vm->stack_top - 1 - argsc
-    };
-
-    vm->shadow_frame_top++;
-
-    return frame;
-}
-
-inline ShadowFrame *peek_shadow_frame(const VM *vm){
-    return vm->shadow_frame_top - 1;
-}
-
-inline uint8_t advance(VM *vm){
-    Frame *frame = peek_frame(vm);
-
-    return DYNARR_GET_AS(frame->fn->chunks, uint8_t, frame->ip++);
-}
-
-inline uint8_t advance_save(VM *vm){
-    Frame *frame = peek_frame(vm);
-    size_t at = frame->prev_ip = frame->ip++;
-    uint8_t chunk = DYNARR_GET_AS(frame->fn->chunks, uint8_t, at);
-
-    return chunk;
-}
-
-inline uint8_t *advance_by_ptr(VM *vm, size_t by){
-    Frame *frame = peek_frame(vm);
-
-    return (uint8_t *)dynarr_get_raw(frame->fn->chunks, (frame->ip += by) - by);
-}
-
-void add_out_value_to_current_frame(VM *vm, ForeignValue *foreign){
-    ShadowFrame *shadow_frame = peek_shadow_frame(vm);
-
-    if(shadow_frame->foreigns_tail){
-        shadow_frame->foreigns_tail->next = foreign;
-        foreign->prev = shadow_frame->foreigns_tail;
-    }else{
-        shadow_frame->foreigns_head = foreign;
-    }
-
-    shadow_frame->foreigns_tail = foreign;
-}
-
-ForeignValue *remove_value_from_current_frame(VM *vm, ForeignValue *foreign){
-    ForeignValue *next_foreign = foreign->next;
-    ShadowFrame *shadow_frame = peek_shadow_frame(vm);
-
-    if(foreign == shadow_frame->foreigns_head){
-        shadow_frame->foreigns_head = foreign->next;
-    }
-    if(foreign == shadow_frame->foreigns_tail){
-        shadow_frame->foreigns_tail = foreign->prev;
-    }
-
-    if(foreign->prev){
-        foreign->prev->next = foreign->next;
-    }
-    if(foreign->next){
-        foreign->next->prev = foreign->prev;
-    }
-
-    foreign->prev = NULL;
-    foreign->next = NULL;
-
-    return next_foreign;
-}
-
-inline void call_fn(uint8_t argsc, const Fn *fn, VM *vm){
-    size_t params_count = fn->arity;
-
-    if(argsc != params_count){
-        vm_error(
-            vm,
-            "Failed to call function '%s'. Declared with %d parameter(s), but got %d argument(s)",
-            fn->name,
-            params_count,
-            argsc
-        );
-    }
-
-    push_frame(vm, argsc)->fn = fn;
-}
-
-inline void call_closure(uint8_t argsc, Closure *closure, VM *vm){
-    Fn *fn = closure->fn;
-    size_t params_count = fn->arity;
-
-    if(argsc != params_count){
-        vm_error(
-            vm,
-            "Failed to call closure '%s'. Declared with %d parameter(s), but got %d argument(s)",
-            fn->name,
-            params_count,
-            argsc
-        );
-    }
-
-    Frame *frame = push_frame(vm, argsc);
-    ShadowFrame *shadow_frame = peek_shadow_frame(vm);
-
-    frame->fn = fn;
-    shadow_frame->closure = closure;
-}
-
-inline void pop_frame(VM *vm){
-    if(vm->frame_top == vm->frame_stack){
-        vm_error(
-            vm,
-            "Frame stack is empty"
-        );
-    }
-
-    vm->frame_top--;
-    vm->shadow_frame_top--;
-}
-
-inline Value *frame_local(uint8_t which, VM *vm){
-    Frame *frame = peek_frame(vm);
-    Value *locals = frame->locals;
-    Value *local = locals + 1 + which;
-
-    if(local >= vm->stack_top){
-        internal_error(vm, "Illegal frame local offset: %"PRId8"", which);
-    }
-
-    return local;
-}
-
-#define BINARY_OP(_vm, _OPERATOR)                                                          \
-    Value right_value = pop(_vm);                                                          \
-    Value left_value = pop(_vm);                                                           \
-                                                                                           \
-    if(IS_VALUE_INT(left_value) && IS_VALUE_INT(right_value)){                             \
-        PUSH_INT(_vm, VALUE_TO_INT(left_value) _OPERATOR VALUE_TO_INT(right_value));       \
-    }else if(IS_VALUE_FLOAT(left_value) && IS_VALUE_FLOAT(right_value)){                   \
-        PUSH_FLOAT(_vm, VALUE_TO_FLOAT(left_value) _OPERATOR VALUE_TO_FLOAT(right_value)); \
-    }else if(IS_VALUE_INT(left_value) && IS_VALUE_FLOAT(right_value)){                     \
-        PUSH_FLOAT(_vm, VALUE_TO_INT(left_value) _OPERATOR VALUE_TO_FLOAT(right_value));   \
-    }else if(IS_VALUE_FLOAT(left_value) && IS_VALUE_INT(right_value)){                     \
-        PUSH_FLOAT(_vm, VALUE_TO_FLOAT(left_value) _OPERATOR VALUE_TO_INT(right_value));   \
-    }else{                                                                                 \
-        vm_error(                                                                          \
-            vm,                                                                            \
-            "Illegal operands types for %s operator",                                      \
-            #_OPERATOR                                                                     \
-        );                                                                                 \
-    }
-
-static int compare_closure_foreigns(const void *a, const void *b){
-    ForeignValue *foreign_a = (ForeignValue *)a;
-    ForeignValue *foreign_b = (ForeignValue *)b;
-    uint8_t local_a = foreign_a->local;
-    uint8_t local_b = foreign_b->local;
-
-    if(local_a == local_b){
-        return 0;
-    }else{
-        return local_a > local_b ? 1 : -1;
-    }
-}
-
-ClosureObj *init_closure(VM *vm, Closure *closure){
-    ClosureObj *closure_obj = vm_create_closure(vm, closure);
-    ForeignValue *foreigns = closure_obj->closure->foreigns;
-    size_t locals_len = closure->locals_len;
-
-    for (size_t i = 0; i < locals_len; i++){
-        ForeignValue *foreign = &foreigns[i];
-        uint8_t local = closure->locals[i];
-
-        foreign->linked = 1;
-        foreign->local = local;
-        foreign->value = frame_local(local, vm);
-
-        add_out_value_to_current_frame(vm, foreign);
-    }
-
-    return closure_obj;
 }
 
 int execute(VM *vm){
@@ -2055,10 +2065,10 @@ int execute(VM *vm){
                 uint8_t local = advance(vm);
                 Value value = peek(vm);
 
-                const Closure *closure = VM_CURRENT_CLOSURE(vm);
-                size_t locals_len = closure->locals_len;
-                uint8_t *locals = closure->locals;
-                ForeignValue *foreigns = closure->foreigns;
+                Closure *closure = VM_CURRENT_CLOSURE(vm);
+                size_t locals_len = closure->inf.locals_len;
+                uint8_t *locals = closure->inf.locals;
+                ForeingValue *foreigns = closure->foreigns;
 
                 for (size_t i = 0; i < locals_len; i++){
                     uint8_t foreign_local = locals[i];
@@ -2077,16 +2087,16 @@ int execute(VM *vm){
             }case OP_FOREIGN_GET:{
                 uint8_t local = advance(vm);
 
-                const Closure *closure = VM_CURRENT_CLOSURE(vm);
-                size_t locals_len = closure->locals_len;
-                uint8_t *locals = closure->locals;
-                ForeignValue *foreigns = closure->foreigns;
+                Closure *closure = VM_CURRENT_CLOSURE(vm);
+                size_t locals_len = closure->inf.locals_len;
+                uint8_t *locals = closure->inf.locals;
+                ForeingValue *foreigns = closure->foreigns;
 
                 for (size_t i = 0; i < locals_len; i++){
                     uint8_t foreign_local = locals[i];
 
                     if(foreign_local == local){
-                        ForeignValue *foreign = &foreigns[i];
+                        ForeingValue *foreign = &foreigns[i];
 
                         push(vm, *foreign->value);
 
@@ -2260,7 +2270,7 @@ int execute(VM *vm){
                     );
                 }
 
-                Closure *closure = DYNARR_GET_PTR_AS(closures, Closure, closure_idx);
+                ClosureInf *closure = DYNARR_GET_PTR_AS(closures, ClosureInf, closure_idx);
                 ClosureObj *closure_obj = init_closure(vm, closure);
 
                 PUSH_OBJ(vm, closure_obj);
@@ -2472,7 +2482,7 @@ int execute(VM *vm){
 
                         break;
                     }case CLOSURE_OBJ_TYPE:{
-                        call_closure(args_count, VALUE_TO_CLOSURE(callable_value)->closure, vm);
+                        call_closure(args_count, &((ClosureObj *)callable_obj)->closure, vm);
 
                         break;
                     }default:{
@@ -2752,12 +2762,22 @@ int execute(VM *vm){
             }case OP_RET:{
                 Value result_value = pop(vm);
                 Frame *frame = peek_frame(vm);
-                ShadowFrame *shadow_frame = peek_shadow_frame(vm);
-                ForeignValue *foreign = shadow_frame->foreigns_head;
+                ClosureList *closures = &peek_shadow_frame(vm)->closures;
+                Closure *closure = closures->head;
 
-                while (foreign){
-                    foreign->value = clone_value(vm, *foreign->value);
-                    foreign = remove_value_from_current_frame(vm, foreign);
+                while (closure){
+                    size_t foreigns_len = closure->inf.locals_len;
+                    ForeingValue *foreigns = closure->foreigns;
+
+                    for (size_t i = 0; i < foreigns_len; i++){
+                        ForeingValue *foreign = &foreigns[i];
+
+                        assert(foreign->value);
+
+                        foreign->value = clone_value(vm, *foreign->value);
+                    }
+
+                    closure = remove_closure_from_list(vm, closures, closure);
                 }
 
                 vm->stack_top = frame->locals;
@@ -2968,7 +2988,7 @@ void vm_initialize(VM *vm){
     vm->native_objs_unit_id        = vm_unit_reservate(vm, sizeof(NativeObj));
     vm->fn_objs_unit_id            = vm_unit_reservate(vm, sizeof(FnObj));
     vm->native_fn_objs_unit_id     = vm_unit_reservate(vm, sizeof(NativeFnObj));
-    vm->closures_unit_id           = vm_unit_reservate(vm, sizeof(Closure));
+    vm->closures_unit_id           = vm_unit_reservate(vm, sizeof(ClosureInf));
     vm->closure_objs_unit_id       = vm_unit_reservate(vm, sizeof(ClosureObj));
     vm->native_module_objs_unit_id = vm_unit_reservate(vm, sizeof(NativeModuleObj));
     vm->module_objs_unit_id        = vm_unit_reservate(vm, sizeof(ModuleObj));
@@ -3976,23 +3996,19 @@ inline FnObj *vm_create_fn(VM *vm, Fn *fn){
     return fn_obj;
 }
 
-ClosureObj *vm_create_closure(VM *vm, Closure *closure){
-    size_t locals_len = closure->locals_len;
-    ForeignValue *foreigns = MEMORY_ALLOC(vm_allocator(vm), ForeignValue, locals_len);
+ClosureObj *vm_create_closure(VM *vm, ClosureInf *closure_inf){
+    const Allocator *allocator = vm_allocator(vm);
+
+    size_t locals_len = closure_inf->locals_len;
+    ForeingValue *foreigns = MEMORY_ALLOC(allocator, ForeingValue, locals_len);
     ClosureObj *closure_obj = alloc_closure_obj_unit(vm);
-
-    for (size_t i = 0; i < locals_len; i++){
-        ForeignValue *foreign = &foreigns[i];
-
-        *foreign = (ForeignValue){
-            .local = -1
-        };
-    }
 
     init_obj(vm, (Obj *)closure_obj, CLOSURE_OBJ_TYPE);
 
-    closure->foreigns = foreigns;
-    closure_obj->closure = closure;
+    closure_obj->closure = (Closure){
+        .inf = *closure_inf,
+        .foreigns = foreigns
+    };
 
     return closure_obj;
 }

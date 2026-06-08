@@ -566,8 +566,7 @@ void obj_to_json(
             break;
         }case CLOSURE_OBJ_TYPE:{
             ClosureObj *closure_obj = OBJ_TO_CLOSURE(obj);
-            Closure *closure = closure_obj->closure;
-            Fn *fn = closure->fn;
+            Fn *fn = closure_obj->closure.inf.fn;
 
             lzbstr_append_args(str, "<closure %zu>", fn->arity);
 
@@ -1016,8 +1015,7 @@ void vmu_print_obj(VM *vm, FILE *stream, Obj *object){
             break;
         }case CLOSURE_OBJ_TYPE:{
             ClosureObj *closure_obj = OBJ_TO_CLOSURE(object);
-            Closure *closure = closure_obj->closure;
-            Fn *fn = closure->fn;
+            Fn *fn = closure_obj->closure.inf.fn;
 
             fprintf(stream, "<closure '%s' - %d at %p>", fn->name, fn->arity, fn);
 

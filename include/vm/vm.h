@@ -111,7 +111,7 @@ NativeFnObj *vm_create_native_fn(VM *vm, Value target, NativeFn *native_fn);
 //-----------------------------  FN  -----------------------------//
 FnObj *vm_create_fn(VM *vm, Fn *fn);
 //--------------------------  CLOSURE  ---------------------------//
-ClosureObj *vm_create_closure(VM *vm, Closure *closure);
+ClosureObj *vm_create_closure(VM *vm, ClosureInf *closure);
 //-----------------------  NATIVE MODULE  ------------------------//
 NativeModuleObj *vm_create_native_module(VM *vm, NativeModule *native_module);
 //---------------------------  MODULE  ---------------------------//

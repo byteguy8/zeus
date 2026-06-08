@@ -5,19 +5,33 @@
 
 #include <stdint.h>
 
-typedef struct foreign_value{
-    bool_t               linked;
-    int16_t              local;
-    Value                *value;
-    struct foreign_value *prev;
-    struct foreign_value *next;
-}ForeignValue;
+typedef struct foreign_value ForeingValue;
+typedef struct closure_inf   ClosureInf;
+typedef struct closure       Closure;
+typedef struct closure_list  ClosureList;
 
-typedef struct closure{
-    uint8_t      locals_len;
-    uint8_t      *locals;
-    ForeignValue *foreigns;
-    Fn           *fn;
-}Closure;
+struct foreign_value{
+    int16_t local;
+    Value   *value;
+};
+
+struct closure_inf{
+    uint8_t locals_len;
+    uint8_t *locals;
+    Fn      *fn;
+};
+
+struct closure{
+    ClosureInf   inf;
+    ForeingValue *foreigns;
+    Closure      *prev;
+    Closure      *next;
+    ClosureList  *list;
+};
+
+struct closure_list{
+    Closure *head;
+    Closure *tail;
+};
 
 #endif

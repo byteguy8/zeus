@@ -209,25 +209,29 @@ OK:
     return fn;
 }
 
-Closure *vm_factory_module_closure_create(const Allocator *allocator, Module *module, size_t locals_len, size_t *out_closure_idx){
+ClosureInf *vm_factory_module_closure_inf_create(const Allocator *allocator, Module *module, size_t locals_len, size_t *out_closure_idx){
     ModuleContext *module_context = module->context;
     DynArr *closures = module_context->closures;
 
     uint8_t *locals = MEMORY_ALLOC(allocator, uint8_t, locals_len);
+    ClosureInf *closure = MEMORY_ALLOC(allocator, ClosureInf, 1);
 
-    size_t closure_idx = dynarr_len(closures);
-    Closure closure = (Closure){
+    MEMORY_CHECK(locals);
+    MEMORY_CHECK(closure);
+    MEMORY_CHECK(!dynarr_insert_ptr(closures, closure));
+
+    size_t closure_idx = dynarr_len(closures) - 1;
+
+    *closure = (ClosureInf){
         .locals_len = locals_len,
         .locals = locals
     };
-
-    MEMORY_CHECK(locals);
-    MEMORY_CHECK(!dynarr_insert(closures, &closure));
 
     goto OK;
 
 ERROR:
     MEMORY_DEALLOC(allocator, uint8_t, locals_len, locals);
+    MEMORY_DEALLOC(allocator, ClosureInf, 1, closure);
 
     return NULL;
 
@@ -236,7 +240,7 @@ OK:
         *out_closure_idx = closure_idx;
     }
 
-    return (Closure *)dynarr_get_raw(closures, closure_idx);
+    return DYNARR_GET_PTR_AS(closures, ClosureInf, closure_idx);
 }
 
 int vm_factory_module_globals_add_obj(

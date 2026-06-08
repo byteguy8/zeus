@@ -1009,7 +1009,7 @@ void compile_expr(Compiler *compiler, Expr *expr){
             if(captured_symbols_len > 0){
                 size_t captured_symbols_counter = 0;
                 size_t captured_symbols_m = captured_symbols->m;
-                Closure *closure = vm_factory_module_closure_create(
+                ClosureInf *closure = vm_factory_module_closure_inf_create(
                     compiler->rtallocator,
                     compiler->module,
                     captured_symbols_len,

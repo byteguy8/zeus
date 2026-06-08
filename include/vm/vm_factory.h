@@ -29,7 +29,7 @@ Module *vm_factory_module_sole_create(const Allocator *allocator, ModuleContext 
 void vm_factory_module_destroy(Module *module, const Allocator *allocator);
 
 Fn *vm_factory_module_fn_create(const Allocator *allocator, Module *module, const char *name, uint8_t arity, size_t *out_fn_idx);
-Closure *vm_factory_module_closure_create(const Allocator *allocator, Module *module, size_t ats_len, size_t *out_closure_idx);
+ClosureInf *vm_factory_module_closure_inf_create(const Allocator *allocator, Module *module, size_t ats_len, size_t *out_closure_idx);
 
 int vm_factory_module_globals_add_obj(
 	Module *module,
