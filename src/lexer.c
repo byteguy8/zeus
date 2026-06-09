@@ -39,7 +39,7 @@ static void put_current_lexeme(Lexer *lexer, char *buff);
 static Token *create_token_raw(
     Lexer *lexer,
 	int line,
-    TokType type,
+    TokenType type,
     size_t lexeme_len,
     char *lexeme,
     size_t literal_size,
@@ -47,11 +47,11 @@ static Token *create_token_raw(
 );
 static Token *create_token_literal(
     Lexer *lexer,
-	TokType type,
+	TokenType type,
     size_t literal_size,
     void *literal
 );
-static Token *create_token(Lexer *lexer, TokType type);
+static Token *create_token(Lexer *lexer, TokenType type);
 #define ADD_TOKEN_RAW(_token)(dynarr_insert_ptr(lexer->tokens, (_token)))
 
 static void comment(Lexer *lexer);
@@ -190,7 +190,7 @@ inline void put_current_lexeme(Lexer *lexer, char *buff){
 inline Token *create_token_raw(
     Lexer *lexer,
 	int line,
-    TokType type,
+    TokenType type,
     size_t lexeme_len,
     char *lexeme,
     size_t literal_size,
@@ -212,7 +212,7 @@ inline Token *create_token_raw(
 
 inline Token *create_token_literal(
     Lexer *lexer,
-	TokType type,
+	TokenType type,
     size_t literal_size,
     void *literal
 ){
@@ -230,7 +230,7 @@ inline Token *create_token_literal(
     );
 }
 
-inline Token *create_token(Lexer *lexer, TokType type){
+inline Token *create_token(Lexer *lexer, TokenType type){
 	return create_token_literal(lexer, type, 0, NULL);
 }
 
@@ -245,7 +245,7 @@ void comment(Lexer *lexer){
 }
 
 Token *decimal(Lexer *lexer){
-    TokType type = INT_TYPE_TOKEN_TYPE;
+    TokenType type = INT_TYPE_TOKEN_TYPE;
 
     while (!is_at_end(lexer) && is_dec_digit(peek(lexer))){
         advance(lexer);
@@ -336,7 +336,7 @@ Token *identifier(Lexer *lexer){
 
     size_t lexeme_len = current_lexeme_len(lexer);
     char lexeme[lexeme_len + 1];
-    TokType *type = NULL;
+    TokenType *type = NULL;
 
     put_current_lexeme(lexer, lexeme);
     lzohtable_lookup(lexeme_len, lexeme, (LZOHTable *)lexer->keywords, (void **)(&type));

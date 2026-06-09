@@ -295,8 +295,8 @@ void add_native(const char *name, int arity, RawNativeFn raw_native, LZOHTable *
     lzohtable_put_ck(strlen(name), name, native_fn, natives, NULL);
 }
 
-void add_keyword(const char *name, TokType type, LZOHTable *keywords, const Allocator *allocator){
-    lzohtable_put_ckv(strlen(name), name, sizeof(TokType), &type, keywords, NULL);
+void add_keyword(const char *name, TokenType type, LZOHTable *keywords, const Allocator *allocator){
+    lzohtable_put_ckv(strlen(name), name, sizeof(TokenType), &type, keywords, NULL);
 }
 
 LZOHTable *create_keywords_table(const Allocator *allocator){

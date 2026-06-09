@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 
-typedef enum tok_type{
+typedef enum token_type{
     EXCLAMATION_TOKEN_TYPE,
     QUESTION_MARK_TOKEN_TYPE,
 
@@ -56,11 +56,11 @@ typedef enum tok_type{
 
     IDENTIFIER_TOKEN_TYPE,
     EOF_TOKEN_TYPE
-}TokType;
+}TokenType;
 
 typedef struct token{
     int        line;
-    TokType    type;
+    TokenType  type;
     size_t     lexeme_len;
     char       *lexeme;
     size_t     literal_size;
