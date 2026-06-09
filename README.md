@@ -276,3 +276,69 @@ for(let num = 1; num <= 100; num += 1){
     }
 }
 ```
+
+### Procedures
+
+Procedures or functions look like this:
+
+```
+proc fib(value){
+    if(value < 2): ret value;
+
+    ret fib(value - 1) + fib(value - 2);
+}
+```
+
+Parameters, by default, are immutable:
+
+```
+proc decrement(from){
+    for(;from >= 0; from -= 1){ // trying to increment 'from' will cause a error before runtime
+        println(from);
+    }
+}
+```
+
+to make them mutable you use the 'mut' keyword before the parameter name:
+
+```
+proc decrement(mut from){
+    for(;from >= 0; from -= 1){ // This is fine!
+        println(from);
+    }
+}
+```
+
+You can avoid to write the parameters enclosing parenthesis if the procedure has not parameters:
+
+```
+proc foo{
+    println("Hi!");
+}
+```
+
+#### Anonymous
+
+Procedures with not name are written like this:
+
+```
+let some_proc = anon(value){ret value;};
+```
+
+They have the same properties as normal procedures (parameters immutable by default and a short version):
+
+```
+let some_proc = anon(mut from){
+    let values = array[from];
+
+    for(let i = 0; from >= 1; i += 1, from -= 1){
+        values[i] = from;
+    }
+
+    ret values;
+};
+```
+
+```
+let some_proc = anon{println("I'm useless, like this programming language");};
+```
