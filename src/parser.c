@@ -840,34 +840,39 @@ Expr *parse_literal(Parser *parser){
         DynArr *stmts = NULL;
 
         anon_token = previous(parser);
-        consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'anon' keyword");
 
-        if(!check(parser, RIGHT_PAREN_TOKTYPE)){
-            params = MEMORY_DYNARR_PTR(CTALLOCATOR);
+        if(match(parser, 1, LEFT_PAREN_TOKTYPE)){
+            if(!check(parser, RIGHT_PAREN_TOKTYPE)){
+                params = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
-            do{
-                unsigned char is_mutable = match(parser, 1, MUT_TOKTYPE);
-                Token *identifier = consume(parser, IDENTIFIER_TOKTYPE, "Expect parameter identifier");
-                ProcParam *param = MEMORY_ALLOC(CTALLOCATOR, ProcParam, 1);
+                do{
+                    unsigned char is_mutable = match(parser, 1, MUT_TOKTYPE);
+                    Token *identifier = consume(parser, IDENTIFIER_TOKTYPE, "Expect parameter identifier");
+                    ProcParam *param = MEMORY_ALLOC(CTALLOCATOR, ProcParam, 1);
 
-                *param = (ProcParam){
-                    .is_mutable = is_mutable,
-                    .identifier = identifier
-                };
+                    *param = (ProcParam){
+                        .is_mutable = is_mutable,
+                        .identifier = identifier
+                    };
 
-                dynarr_insert_ptr(params, param);
-            } while (match(parser, 1, COMMA_TOKTYPE));
+                    dynarr_insert_ptr(params, param);
+                } while (match(parser, 1, COMMA_TOKTYPE));
+            }
+
+            consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of function parameters");
         }
 
-        consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of function parameters");
         consume(parser, LEFT_BRACKET_TOKTYPE, "Expect '{' at start of function body");
+
         stmts = parse_block_stmt(parser);
 
         AnonExpr *anon_expr = MEMORY_ALLOC(CTALLOCATOR, AnonExpr, 1);
 
-        anon_expr->anon_token = anon_token;
-        anon_expr->params = params;
-        anon_expr->stmts = stmts;
+        *anon_expr = (AnonExpr){
+            .anon_token = anon_token,
+            .params = params,
+            .stmts = stmts
+        };
 
         return create_expr(ANON_EXPR_TYPE, anon_expr, parser);
     }
@@ -1404,38 +1409,34 @@ Stmt *parse_function_stmt(Parser *parser){
         "Expect function name after 'proc' keyword"
     );
 
-    consume(
-        parser,
-        LEFT_PAREN_TOKTYPE,
-        "Expect '(' after function name"
-    );
+    if(match(parser, 1, LEFT_PAREN_TOKTYPE)){
+        if(!check(parser, RIGHT_PAREN_TOKTYPE)){
+            params = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
-    if(!check(parser, RIGHT_PAREN_TOKTYPE)){
-        params = MEMORY_DYNARR_PTR(CTALLOCATOR);
+            do{
+                unsigned char is_mutable = match(parser, 1, MUT_TOKTYPE);
+                Token *identifier = consume(
+                    parser,
+                    IDENTIFIER_TOKTYPE,
+                    "Expect function parameter name"
+                );
+                ProcParam *param = MEMORY_ALLOC(CTALLOCATOR, ProcParam, 1);
 
-        do{
-            unsigned char is_mutable = match(parser, 1, MUT_TOKTYPE);
-            Token *identifier = consume(
-                parser,
-                IDENTIFIER_TOKTYPE,
-                "Expect function parameter name"
-            );
-            ProcParam *param = MEMORY_ALLOC(CTALLOCATOR, ProcParam, 1);
+                *param = (ProcParam){
+                    .is_mutable = is_mutable,
+                    .identifier = identifier
+                };
 
-            *param = (ProcParam){
-                .is_mutable = is_mutable,
-                .identifier = identifier
-            };
+                dynarr_insert_ptr(params, param);
+            } while (match(parser, 1, COMMA_TOKTYPE));
+        }
 
-            dynarr_insert_ptr(params, param);
-        } while (match(parser, 1, COMMA_TOKTYPE));
+        consume(
+            parser,
+            RIGHT_PAREN_TOKTYPE,
+            "Expect ')' at end of function parameters"
+        );
     }
-
-    consume(
-        parser,
-        RIGHT_PAREN_TOKTYPE,
-        "Expect ')' at end of function parameters"
-    );
 
     if(match(parser, 1, COLON_TOKTYPE)){
 		stmts = MEMORY_DYNARR_PTR(CTALLOCATOR);
