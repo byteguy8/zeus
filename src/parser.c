@@ -1082,7 +1082,7 @@ IfStmtBranch *parse_if_stmt_branch(Token *branch_token, Parser *parser){
        	branch_token->lexeme
     );
 
-    condition = parse_equality(parser);
+    condition = parse_is_expr(parser);
 
 	consume(
 		parser,
@@ -1129,8 +1129,9 @@ Stmt *parse_if_stmt(Parser *parser){
     IfStmtBranch *if_branch = NULL;
     DynArr *elif_branches = NULL;
 	DynArr *else_stmts = NULL;
+    Token *branch_token = previous(parser);
 
-    if_branch = parse_if_stmt_branch(previous(parser), parser);
+    if_branch = parse_if_stmt_branch(branch_token, parser);
 
     if(check(parser, ELIF_TOKTYPE)){
         elif_branches = MEMORY_DYNARR_PTR(CTALLOCATOR);
