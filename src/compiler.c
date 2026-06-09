@@ -1181,15 +1181,15 @@ void compile_expr(Compiler *compiler, Expr *expr){
             compile_expr(compiler, unary_expr->right);
 
             switch(operator_token->type){
-                case MINUS_TOKTYPE:{
+                case MINUS_TOKEN_TYPE:{
                     write_chunk(compiler, OP_NNOT);
 
                     break;
-                }case EXCLAMATION_TOKTYPE:{
+                }case EXCLAMATION_TOKEN_TYPE:{
                     write_chunk(compiler, OP_NOT);
 
                     break;
-                }case NOT_BITWISE_TOKTYPE:{
+                }case NOT_BITWISE_TOKEN_TYPE:{
                     write_chunk(compiler, OP_BNOT);
 
                     break;
@@ -1211,19 +1211,19 @@ void compile_expr(Compiler *compiler, Expr *expr){
             compile_expr(compiler, binary_expr->right);
 
             switch (operator->type){
-                case PLUS_TOKTYPE:{
+                case PLUS_TOKEN_TYPE:{
                     write_chunk(compiler, OP_ADD);
                     break;
-                }case MINUS_TOKTYPE:{
+                }case MINUS_TOKEN_TYPE:{
                     write_chunk(compiler, OP_SUB);
                     break;
-                }case ASTERISK_TOKTYPE:{
+                }case ASTERISK_TOKEN_TYPE:{
                     write_chunk(compiler, OP_MUL);
                     break;
-                }case SLASH_TOKTYPE:{
+                }case SLASH_TOKEN_TYPE:{
                     write_chunk(compiler, OP_DIV);
                     break;
-                }case MOD_TOKTYPE:{
+                }case MOD_TOKEN_TYPE:{
 					write_chunk(compiler, OP_MOD);
 					break;
 				}default:{
@@ -1263,19 +1263,19 @@ void compile_expr(Compiler *compiler, Expr *expr){
             compile_expr(compiler, bitwise_expr->right);
 
             switch (operator_token->type){
-                case LEFT_SHIFT_TOKTYPE:{
+                case LEFT_SHIFT_TOKEN_TYPE:{
                     write_chunk(compiler, OP_LSH);
                     break;
-                }case RIGHT_SHIFT_TOKTYPE:{
+                }case RIGHT_SHIFT_TOKEN_TYPE:{
                     write_chunk(compiler, OP_RSH);
                     break;
-                }case AND_BITWISE_TOKTYPE:{
+                }case AND_BITWISE_TOKEN_TYPE:{
                     write_chunk(compiler, OP_BAND);
                     break;
-                }case XOR_BITWISE_TOKTYPE:{
+                }case XOR_BITWISE_TOKEN_TYPE:{
                     write_chunk(compiler, OP_BXOR);
                     break;
-                }case OR_BITWISE_TOKTYPE:{
+                }case OR_BITWISE_TOKEN_TYPE:{
                     write_chunk(compiler, OP_BOR);
                     break;
                 }default:{
@@ -1295,22 +1295,22 @@ void compile_expr(Compiler *compiler, Expr *expr){
             compile_expr(compiler, comparison_expr->right);
 
             switch (operator_token->type){
-                case LESS_TOKTYPE:{
+                case LESS_TOKEN_TYPE:{
                     write_chunk(compiler, OP_LT);
                     break;
-                }case GREATER_TOKTYPE:{
+                }case GREATER_TOKEN_TYPE:{
                     write_chunk(compiler, OP_GT);
                     break;
-                }case LESS_EQUALS_TOKTYPE:{
+                }case LESS_EQUALS_TOKEN_TYPE:{
                     write_chunk(compiler, OP_LE);
                     break;
-                }case GREATER_EQUALS_TOKTYPE:{
+                }case GREATER_EQUALS_TOKEN_TYPE:{
                     write_chunk(compiler, OP_GE);
                     break;
-                }case EQUALS_EQUALS_TOKTYPE:{
+                }case EQUALS_EQUALS_TOKEN_TYPE:{
                     write_chunk(compiler, OP_EQ);
                     break;
-                }case NOT_EQUALS_TOKTYPE:{
+                }case NOT_EQUALS_TOKEN_TYPE:{
                     write_chunk(compiler, OP_NE);
                     break;
                 }default:{
@@ -1330,7 +1330,7 @@ void compile_expr(Compiler *compiler, Expr *expr){
             compile_expr(compiler, logical_expr->left);
 
             switch (operator_token->type){
-                case OR_TOKTYPE:{
+                case OR_TOKEN_TYPE:{
                     uint32_t id = generate_id(compiler);
 
                     or(compiler, operator_token, "OR_END_%"PRId32, id);
@@ -1338,7 +1338,7 @@ void compile_expr(Compiler *compiler, Expr *expr){
                     label(compiler, operator_token, "OR_END_%"PRId32, id);
 
                     break;
-                }case AND_TOKTYPE:{
+                }case AND_TOKEN_TYPE:{
                     uint32_t id = generate_id(compiler);
 
                     and(compiler, operator_token, "AND_END_%"PRId32, id);
@@ -1546,19 +1546,19 @@ void compile_expr(Compiler *compiler, Expr *expr){
                     compile_expr(compiler, right_expr);
 
                     switch(operator_token->type){
-                        case COMPOUND_ADD_TOKTYPE:{
+                        case COMPOUND_ADD_TOKEN_TYPE:{
                             write_chunk(compiler, OP_ADD);
 
                             break;
-                        }case COMPOUND_SUB_TOKTYPE:{
+                        }case COMPOUND_SUB_TOKEN_TYPE:{
                             write_chunk(compiler, OP_SUB);
 
                             break;
-                        }case COMPOUND_MUL_TOKTYPE:{
+                        }case COMPOUND_MUL_TOKEN_TYPE:{
                             write_chunk(compiler, OP_MUL);
 
                             break;
-                        }case COMPOUND_DIV_TOKTYPE:{
+                        }case COMPOUND_DIV_TOKEN_TYPE:{
                             write_chunk(compiler, OP_DIV);
 
                             break;
@@ -1605,19 +1605,19 @@ void compile_expr(Compiler *compiler, Expr *expr){
                   	compile_expr(compiler, right_expr);
 
                  	switch(operator_token->type){
-                    	case COMPOUND_ADD_TOKTYPE:{
+                    	case COMPOUND_ADD_TOKEN_TYPE:{
                         	write_chunk(compiler, OP_ADD);
 
                             break;
-                      	}case COMPOUND_SUB_TOKTYPE:{
+                      	}case COMPOUND_SUB_TOKEN_TYPE:{
                           	write_chunk(compiler, OP_SUB);
 
                             break;
-                       	}case COMPOUND_MUL_TOKTYPE:{
+                       	}case COMPOUND_MUL_TOKEN_TYPE:{
                           	write_chunk(compiler, OP_MUL);
 
                             break;
-                        }case COMPOUND_DIV_TOKTYPE:{
+                        }case COMPOUND_DIV_TOKEN_TYPE:{
                           	write_chunk(compiler, OP_DIV);
 
                             break;
@@ -1648,19 +1648,19 @@ void compile_expr(Compiler *compiler, Expr *expr){
                     compile_expr(compiler, right_expr);
 
                     switch(operator_token->type){
-                        case COMPOUND_ADD_TOKTYPE:{
+                        case COMPOUND_ADD_TOKEN_TYPE:{
                             write_chunk(compiler, OP_ADD);
 
                             break;
-                        }case COMPOUND_SUB_TOKTYPE:{
+                        }case COMPOUND_SUB_TOKEN_TYPE:{
                             write_chunk(compiler, OP_SUB);
 
                             break;
-                        }case COMPOUND_MUL_TOKTYPE:{
+                        }case COMPOUND_MUL_TOKEN_TYPE:{
                             write_chunk(compiler, OP_MUL);
 
                             break;
-                        }case COMPOUND_DIV_TOKTYPE:{
+                        }case COMPOUND_DIV_TOKEN_TYPE:{
                             write_chunk(compiler, OP_DIV);
 
                             break;
@@ -1805,43 +1805,43 @@ void compile_expr(Compiler *compiler, Expr *expr){
 			write_location(compiler, is_expr->is_token);
 
 			switch(is_expr->type_token->type){
-				case EMPTY_TOKTYPE:{
+				case EMPTY_TOKEN_TYPE:{
 					write_chunk(compiler, 0);
 
                     break;
-				}case BOOL_TOKTYPE:{
+				}case BOOL_TOKEN_TYPE:{
 					write_chunk(compiler, 1);
 
                     break;
-				}case INT_TOKTYPE:{
+				}case INT_TOKEN_TYPE:{
 					write_chunk(compiler, 2);
 
                     break;
-				}case FLOAT_TOKTYPE:{
+				}case FLOAT_TOKEN_TYPE:{
 					write_chunk(compiler, 3);
 
                     break;
-				}case STR_TOKTYPE:{
+				}case STR_TOKEN_TYPE:{
 					write_chunk(compiler, 4);
 
                     break;
-				}case ARRAY_TOKTYPE:{
+				}case ARRAY_TOKEN_TYPE:{
 					write_chunk(compiler, 5);
 
                     break;
-				}case LIST_TOKTYPE:{
+				}case LIST_TOKEN_TYPE:{
 					write_chunk(compiler, 6);
 
                     break;
-				}case DICT_TOKTYPE:{
+				}case DICT_TOKEN_TYPE:{
 					write_chunk(compiler, 7);
 
                     break;
-				}case RECORD_TOKTYPE:{
+				}case RECORD_TOKEN_TYPE:{
                     write_chunk(compiler, 8);
 
                     break;
-                }case PROC_TOKTYPE:{
+                }case PROC_TOKEN_TYPE:{
                     write_chunk(compiler, 9);
 
                     break;

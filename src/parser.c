@@ -120,7 +120,7 @@ inline Token *previous(Parser *parser){
 inline int is_at_end(Parser *parser){
     Token *token = peek(parser);
 
-    return token->type == EOF_TOKTYPE;
+    return token->type == EOF_TOKEN_TYPE;
 }
 
 int match(Parser *parser, int count, ...){
@@ -183,9 +183,9 @@ DynArr *record_key_values(Token *record_token, Parser *parser){
             error(parser, record_token, "Record expressions only accept up to %d values", 255);
         }
 
-		Token *key = consume(parser, IDENTIFIER_TOKTYPE, "Expect record key");
+		Token *key = consume(parser, IDENTIFIER_TOKEN_TYPE, "Expect record key");
 
-        consume(parser, COLON_TOKTYPE, "Expect ':' after record key");
+        consume(parser, COLON_TOKEN_TYPE, "Expect ':' after record key");
 
         Expr *value = parse_expr(parser);
 		RecordExprValue *key_value = MEMORY_ALLOC(CTALLOCATOR, RecordExprValue, 1);
@@ -196,7 +196,7 @@ DynArr *record_key_values(Token *record_token, Parser *parser){
         };
 
         dynarr_insert_ptr(key_values, key_value);
-	}while(match(parser, 1, COMMA_TOKTYPE));
+	}while(match(parser, 1, COMMA_TOKEN_TYPE));
 
 	return key_values;
 }
@@ -209,10 +209,10 @@ Expr *parse_assign(Parser *parser){
     Expr *expr = parse_tenary_expr(parser);
 
 	if(match(parser, 4,
-		COMPOUND_ADD_TOKTYPE,
-		COMPOUND_SUB_TOKTYPE,
-		COMPOUND_MUL_TOKTYPE,
-		COMPOUND_DIV_TOKTYPE
+		COMPOUND_ADD_TOKEN_TYPE,
+		COMPOUND_SUB_TOKEN_TYPE,
+		COMPOUND_MUL_TOKEN_TYPE,
+		COMPOUND_DIV_TOKEN_TYPE
     )){
 		Token *operator = previous(parser);
 		Expr *right = parse_assign(parser);
@@ -227,7 +227,7 @@ Expr *parse_assign(Parser *parser){
 		return create_expr(COMPOUND_EXPR_TYPE, compound_expr, parser);
 	}
 
-    if(match(parser, 1, EQUALS_TOKTYPE)){
+    if(match(parser, 1, EQUALS_TOKEN_TYPE)){
 		Token *equals_token = previous(parser);
         Expr *value_expr = parse_assign(parser);
         AssignExpr *assign_expr = MEMORY_ALLOC(CTALLOCATOR, AssignExpr, 1);
@@ -247,11 +247,11 @@ Expr *parse_assign(Parser *parser){
 Expr *parse_tenary_expr(Parser *parser){
     Expr *condition = parse_is_expr(parser);
 
-    if(match(parser, 1, QUESTION_MARK_TOKTYPE)){
+    if(match(parser, 1, QUESTION_MARK_TOKEN_TYPE)){
         Token *mark_token = previous(parser);
         Expr *left = parse_tenary_expr(parser);
 
-        consume(parser, COLON_TOKTYPE, "Expect ':' after left side expression");
+        consume(parser, COLON_TOKEN_TYPE, "Expect ':' after left side expression");
 
         Expr *right = parse_tenary_expr(parser);
         TenaryExpr *tenary_expr = MEMORY_ALLOC(CTALLOCATOR, TenaryExpr, 1);
@@ -272,23 +272,23 @@ Expr *parse_tenary_expr(Parser *parser){
 Expr *parse_is_expr(Parser *parser){
 	Expr *left = parse_or(parser);
 
-	if(match(parser, 1, IS_TOKTYPE)){
+	if(match(parser, 1, IS_TOKEN_TYPE)){
 		Token *is_token = NULL;
 		Token *type_token = NULL;
 
 		is_token = previous(parser);
 
 		if(match(parser, 10,
-			EMPTY_TOKTYPE,
-			BOOL_TOKTYPE,
-			INT_TOKTYPE,
-			FLOAT_TOKTYPE,
-			STR_TOKTYPE,
-            ARRAY_TOKTYPE,
-			LIST_TOKTYPE,
-			DICT_TOKTYPE,
-            RECORD_TOKTYPE,
-            PROC_TOKTYPE
+			EMPTY_TOKEN_TYPE,
+			BOOL_TOKEN_TYPE,
+			INT_TOKEN_TYPE,
+			FLOAT_TOKEN_TYPE,
+			STR_TOKEN_TYPE,
+            ARRAY_TOKEN_TYPE,
+			LIST_TOKEN_TYPE,
+			DICT_TOKEN_TYPE,
+            RECORD_TOKEN_TYPE,
+            PROC_TOKEN_TYPE
         )){
 			type_token = previous(parser);
 		}
@@ -314,7 +314,7 @@ Expr *parse_is_expr(Parser *parser){
 Expr *parse_or(Parser *parser){
     Expr *left = parse_and(parser);
 
-	while(match(parser, 1, OR_TOKTYPE)){
+	while(match(parser, 1, OR_TOKEN_TYPE)){
 		Token *operator = previous(parser);
 		Expr *right = parse_and(parser);
 		LogicalExpr *logical_expr = MEMORY_ALLOC(CTALLOCATOR, LogicalExpr, 1);
@@ -334,7 +334,7 @@ Expr *parse_or(Parser *parser){
 Expr *parse_and(Parser *parser){
     Expr *left = parse_bitwise_or(parser);
 
-	while(match(parser, 1, AND_TOKTYPE)){
+	while(match(parser, 1, AND_TOKEN_TYPE)){
 		Token *operator = previous(parser);
 		Expr *right = parse_bitwise_or(parser);
 		LogicalExpr *logical_expr = MEMORY_ALLOC(CTALLOCATOR, LogicalExpr, 1);
@@ -354,7 +354,7 @@ Expr *parse_and(Parser *parser){
 Expr *parse_bitwise_or(Parser *parser){
     Expr *left = parse_bitwise_xor(parser);
 
-	while(match(parser, 1, OR_BITWISE_TOKTYPE)){
+	while(match(parser, 1, OR_BITWISE_TOKEN_TYPE)){
 		Token *operator = previous(parser);
 		Expr *right = parse_bitwise_xor(parser);
 		BitWiseExpr *bitwise_expr = MEMORY_ALLOC(CTALLOCATOR, BitWiseExpr, 1);
@@ -374,7 +374,7 @@ Expr *parse_bitwise_or(Parser *parser){
 Expr *parse_bitwise_xor(Parser *parser){
     Expr *left = parse_bitwise_and(parser);
 
-	while(match(parser, 1, XOR_BITWISE_TOKTYPE)){
+	while(match(parser, 1, XOR_BITWISE_TOKEN_TYPE)){
 		Token *operator = previous(parser);
 		Expr *right = parse_bitwise_and(parser);
 		BitWiseExpr *bitwise_expr = MEMORY_ALLOC(CTALLOCATOR, BitWiseExpr, 1);
@@ -394,7 +394,7 @@ Expr *parse_bitwise_xor(Parser *parser){
 Expr *parse_bitwise_and(Parser *parser){
     Expr *left = parse_equality(parser);
 
-	while(match(parser, 1, AND_BITWISE_TOKTYPE)){
+	while(match(parser, 1, AND_BITWISE_TOKEN_TYPE)){
 		Token *operator = previous(parser);
 		Expr *right = parse_equality(parser);
 		BitWiseExpr *bitwise_expr = MEMORY_ALLOC(CTALLOCATOR, BitWiseExpr, 1);
@@ -414,7 +414,7 @@ Expr *parse_bitwise_and(Parser *parser){
 Expr *parse_equality(Parser *parser){
     Expr *left = parse_relational(parser);
 
-	while(match(parser, 2, EQUALS_EQUALS_TOKTYPE, NOT_EQUALS_TOKTYPE)){
+	while(match(parser, 2, EQUALS_EQUALS_TOKEN_TYPE, NOT_EQUALS_TOKEN_TYPE)){
 		Token *operator = previous(parser);
 		Expr *right = parse_relational(parser);
 		ComparisonExpr *equality_expr = MEMORY_ALLOC(CTALLOCATOR, ComparisonExpr, 1);
@@ -435,10 +435,10 @@ Expr *parse_relational(Parser *parser){
     Expr *left = parse_shift(parser);
 
 	while(match(parser, 4,
-        LESS_TOKTYPE,
-        GREATER_TOKTYPE,
-        LESS_EQUALS_TOKTYPE,
-        GREATER_EQUALS_TOKTYPE
+        LESS_TOKEN_TYPE,
+        GREATER_TOKEN_TYPE,
+        LESS_EQUALS_TOKEN_TYPE,
+        GREATER_EQUALS_TOKEN_TYPE
     )){
 		Token *operator = previous(parser);
 		Expr *right = parse_shift(parser);
@@ -459,7 +459,7 @@ Expr *parse_relational(Parser *parser){
 Expr *parse_shift(Parser *parser){
     Expr *left = parse_concat(parser);
 
-	while(match(parser, 2, LEFT_SHIFT_TOKTYPE, RIGHT_SHIFT_TOKTYPE)){
+	while(match(parser, 2, LEFT_SHIFT_TOKEN_TYPE, RIGHT_SHIFT_TOKEN_TYPE)){
 		Token *operator = previous(parser);
 		Expr *right = parse_concat(parser);
 		BitWiseExpr *bitwise_expr = MEMORY_ALLOC(CTALLOCATOR, BitWiseExpr, 1);
@@ -479,7 +479,7 @@ Expr *parse_shift(Parser *parser){
 Expr *parse_concat(Parser *parser){
     Expr *left = parse_mulstr(parser);
 
-	while(match(parser, 1, DOUBLE_DOT_TOKTYPE)){
+	while(match(parser, 1, DOUBLE_DOT_TOKEN_TYPE)){
 		Token *operator = previous(parser);
 		Expr *right = parse_mulstr(parser);
 		ConcatExpr *concat_expr = MEMORY_ALLOC(CTALLOCATOR, ConcatExpr, 1);
@@ -499,7 +499,7 @@ Expr *parse_concat(Parser *parser){
 Expr *parse_mulstr(Parser *parser){
     Expr *left = parse_term(parser);
 
-	while(match(parser, 1, DOUBLE_ASTERISK_TOKTYPE)){
+	while(match(parser, 1, DOUBLE_ASTERISK_TOKEN_TYPE)){
 		Token *operator = previous(parser);
 		Expr *right = parse_term(parser);
 		MulStrExpr *mul_str_expr = MEMORY_ALLOC(CTALLOCATOR, MulStrExpr, 1);
@@ -519,7 +519,7 @@ Expr *parse_mulstr(Parser *parser){
 Expr *parse_term(Parser *parser){
 	Expr *left = parse_factor(parser);
 
-	while(match(parser, 2, PLUS_TOKTYPE, MINUS_TOKTYPE)){
+	while(match(parser, 2, PLUS_TOKEN_TYPE, MINUS_TOKEN_TYPE)){
 		Token *operator = previous(parser);
 		Expr *right = parse_factor(parser);
 		BinaryExpr *binary_expr = MEMORY_ALLOC(CTALLOCATOR, BinaryExpr, 1);
@@ -539,7 +539,7 @@ Expr *parse_term(Parser *parser){
 Expr *parse_factor(Parser *parser){
 	Expr *left = parse_unary(parser);
 
-	while(match(parser, 3, ASTERISK_TOKTYPE, SLASH_TOKTYPE, MOD_TOKTYPE)){
+	while(match(parser, 3, ASTERISK_TOKEN_TYPE, SLASH_TOKEN_TYPE, MOD_TOKEN_TYPE)){
 		Token *operator = previous(parser);
 		Expr *right = parse_unary(parser);
 		BinaryExpr *binary_expr = MEMORY_ALLOC(CTALLOCATOR, BinaryExpr, 1);
@@ -557,7 +557,7 @@ Expr *parse_factor(Parser *parser){
 }
 
 Expr *parse_unary(Parser *parser){
-    if(match(parser, 3, MINUS_TOKTYPE, EXCLAMATION_TOKTYPE, NOT_BITWISE_TOKTYPE)){
+    if(match(parser, 3, MINUS_TOKEN_TYPE, EXCLAMATION_TOKEN_TYPE, NOT_BITWISE_TOKEN_TYPE)){
         Token *operator = previous(parser);
         Expr *right = parse_unary(parser);
         UnaryExpr *unary_expr = MEMORY_ALLOC(CTALLOCATOR, UnaryExpr, 1);
@@ -576,13 +576,13 @@ Expr *parse_unary(Parser *parser){
 Expr *parse_call(Parser *parser){
     Expr *left = parse_types(parser);
 
-    if(check(parser, DOT_TOKTYPE) || check(parser, LEFT_PAREN_TOKTYPE) || check(parser, LEFT_SQUARE_TOKTYPE)){
-        while (match(parser, 3, DOT_TOKTYPE, LEFT_PAREN_TOKTYPE, LEFT_SQUARE_TOKTYPE)){
+    if(check(parser, DOT_TOKEN_TYPE) || check(parser, LEFT_PAREN_TOKEN_TYPE) || check(parser, LEFT_SQUARE_TOKEN_TYPE)){
+        while (match(parser, 3, DOT_TOKEN_TYPE, LEFT_PAREN_TOKEN_TYPE, LEFT_SQUARE_TOKEN_TYPE)){
             Token *token = previous(parser);
 
             switch (token->type){
-                case DOT_TOKTYPE:{
-                    Token *symbol_token = consume(parser, IDENTIFIER_TOKTYPE, "Expect identifier");
+                case DOT_TOKEN_TYPE:{
+                    Token *symbol_token = consume(parser, IDENTIFIER_TOKEN_TYPE, "Expect identifier");
                     AccessExpr *access_expr = MEMORY_ALLOC(CTALLOCATOR, AccessExpr, 1);
 
                     *access_expr = (AccessExpr){
@@ -594,20 +594,20 @@ Expr *parse_call(Parser *parser){
                     left = create_expr(ACCESS_EXPR_TYPE, access_expr, parser);
 
                     break;
-                }case LEFT_PAREN_TOKTYPE:{
+                }case LEFT_PAREN_TOKEN_TYPE:{
                     DynArr *args = NULL;
 
-                    if(!check(parser, RIGHT_PAREN_TOKTYPE)){
+                    if(!check(parser, RIGHT_PAREN_TOKEN_TYPE)){
                         args = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
                         do{
                             Expr *expr = parse_expr(parser);
 
                             dynarr_insert_ptr(args, expr);
-                        }while(match(parser, 1, COMMA_TOKTYPE));
+                        }while(match(parser, 1, COMMA_TOKEN_TYPE));
                     }
 
-                    consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' after call arguments");
+                    consume(parser, RIGHT_PAREN_TOKEN_TYPE, "Expect ')' after call arguments");
 
                     CallExpr *call_expr = MEMORY_ALLOC(CTALLOCATOR, CallExpr, 1);
 
@@ -620,10 +620,10 @@ Expr *parse_call(Parser *parser){
                     left = create_expr(CALL_EXPR_TYPE, call_expr, parser);
 
                     break;
-                }case LEFT_SQUARE_TOKTYPE:{
+                }case LEFT_SQUARE_TOKEN_TYPE:{
                     Expr *index = parse_expr(parser);
 
-                    consume(parser, RIGHT_SQUARE_TOKTYPE, "Expect ']' after index expression");
+                    consume(parser, RIGHT_SQUARE_TOKEN_TYPE, "Expect ']' after index expression");
 
                     IndexExpr *index_expr = MEMORY_ALLOC(CTALLOCATOR, IndexExpr, 1);
 
@@ -651,13 +651,13 @@ Expr *parse_call(Parser *parser){
 Expr *parse_record(Parser *parser, Token *type_token){
     DynArr *key_values = NULL;
 
-    consume(parser, LEFT_BRACKET_TOKTYPE, "Expect '{' after 'record' keyword at start of record body");
+    consume(parser, LEFT_BRACKET_TOKEN_TYPE, "Expect '{' after 'record' keyword at start of record body");
 
-    if(!check(parser, RIGHT_BRACKET_TOKTYPE)){
+    if(!check(parser, RIGHT_BRACKET_TOKEN_TYPE)){
         key_values = record_key_values(type_token, parser);
     }
 
-    consume(parser, RIGHT_BRACKET_TOKTYPE, "Expect '}' at end of record body");
+    consume(parser, RIGHT_BRACKET_TOKEN_TYPE, "Expect '}' at end of record body");
 
     RecordExpr *record_expr = MEMORY_ALLOC(CTALLOCATOR, RecordExpr, 1);
 
@@ -672,9 +672,9 @@ Expr *parse_record(Parser *parser, Token *type_token){
 Expr *parse_dict(Parser *parser, Token *type_token){
     DynArr *key_values = NULL;
 
-    consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'dict' keyword");
+    consume(parser, LEFT_PAREN_TOKEN_TYPE, "Expect '(' after 'dict' keyword");
 
-    if(!check(parser, RIGHT_PAREN_TOKTYPE)){
+    if(!check(parser, RIGHT_PAREN_TOKEN_TYPE)){
         key_values = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
         do{
@@ -684,7 +684,7 @@ Expr *parse_dict(Parser *parser, Token *type_token){
 
             Expr *key = parse_expr(parser);
 
-            consume(parser, TO_TOKTYPE, "Expect 'to' after keyword");
+            consume(parser, TO_TOKEN_TYPE, "Expect 'to' after keyword");
 
             Expr *value = parse_expr(parser);
             DictKeyValue *key_value = MEMORY_ALLOC(CTALLOCATOR, DictKeyValue, 1);
@@ -695,10 +695,10 @@ Expr *parse_dict(Parser *parser, Token *type_token){
             };
 
             dynarr_insert_ptr(key_values, key_value);
-        }while(match(parser, 1, COMMA_TOKTYPE));
+        }while(match(parser, 1, COMMA_TOKEN_TYPE));
     }
 
-    consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of list expression");
+    consume(parser, RIGHT_PAREN_TOKEN_TYPE, "Expect ')' at end of list expression");
 
     DictExpr *dict_expr = MEMORY_ALLOC(CTALLOCATOR, DictExpr, 1);
 
@@ -713,9 +713,9 @@ Expr *parse_dict(Parser *parser, Token *type_token){
 Expr *parse_list(Parser *parser, Token *type_token){
 	DynArr *exprs = NULL;
 
-    consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'list' keyword");
+    consume(parser, LEFT_PAREN_TOKEN_TYPE, "Expect '(' after 'list' keyword");
 
-    if(!check(parser, RIGHT_PAREN_TOKTYPE)){
+    if(!check(parser, RIGHT_PAREN_TOKEN_TYPE)){
         exprs = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
         do{
@@ -726,10 +726,10 @@ Expr *parse_list(Parser *parser, Token *type_token){
             Expr *expr = parse_expr(parser);
 
             dynarr_insert_ptr(exprs, expr);
-        }while(match(parser, 1, COMMA_TOKTYPE));
+        }while(match(parser, 1, COMMA_TOKEN_TYPE));
     }
 
-    consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of list expression");
+    consume(parser, RIGHT_PAREN_TOKEN_TYPE, "Expect ')' at end of list expression");
 
     ListExpr *list_expr = MEMORY_ALLOC(CTALLOCATOR, ListExpr, 1);
 
@@ -745,14 +745,14 @@ Expr *parse_array(Parser *parser, Token *type_token){
     Expr *len_expr = NULL;
     DynArr *values = NULL;
 
-    if(match(parser, 1, LEFT_SQUARE_TOKTYPE)){
+    if(match(parser, 1, LEFT_SQUARE_TOKEN_TYPE)){
         len_expr = parse_expr(parser);
 
-        consume(parser, RIGHT_SQUARE_TOKTYPE, "Expect ']' after array length expression");
+        consume(parser, RIGHT_SQUARE_TOKEN_TYPE, "Expect ']' after array length expression");
     }else{
-        consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'array' keyword");
+        consume(parser, LEFT_PAREN_TOKEN_TYPE, "Expect '(' after 'array' keyword");
 
-        if(!check(parser, RIGHT_PAREN_TOKTYPE)){
+        if(!check(parser, RIGHT_PAREN_TOKEN_TYPE)){
             values = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
             do{
@@ -763,10 +763,10 @@ Expr *parse_array(Parser *parser, Token *type_token){
                 Expr *expr = parse_expr(parser);
 
                 dynarr_insert_ptr(values, expr);
-            }while(match(parser, 1, COMMA_TOKTYPE));
+            }while(match(parser, 1, COMMA_TOKEN_TYPE));
         }
 
-        consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of array elements");
+        consume(parser, RIGHT_PAREN_TOKEN_TYPE, "Expect ')' at end of array elements");
     }
 
     ArrayExpr *array_expr = MEMORY_ALLOC(CTALLOCATOR, ArrayExpr, 1);
@@ -781,17 +781,17 @@ Expr *parse_array(Parser *parser, Token *type_token){
 }
 
 Expr *parse_types(Parser *parser){
-    if(match(parser, 4, RECORD_TOKTYPE, DICT_TOKTYPE, LIST_TOKTYPE, ARRAY_TOKTYPE)){
+    if(match(parser, 4, RECORD_TOKEN_TYPE, DICT_TOKEN_TYPE, LIST_TOKEN_TYPE, ARRAY_TOKEN_TYPE)){
         Token *type_token = previous(parser);
 
         switch (type_token->type){
-            case RECORD_TOKTYPE:{
+            case RECORD_TOKEN_TYPE:{
                 return parse_record(parser, type_token);
-            }case DICT_TOKTYPE:{
+            }case DICT_TOKEN_TYPE:{
                 return parse_dict(parser, type_token);
-            }case LIST_TOKTYPE:{
+            }case LIST_TOKEN_TYPE:{
                 return parse_list(parser, type_token);
-            }case ARRAY_TOKTYPE:{
+            }case ARRAY_TOKEN_TYPE:{
                 return parse_array(parser, type_token);
             }default:{
                 assert(0 && "Illegal token type");
@@ -805,7 +805,7 @@ Expr *parse_types(Parser *parser){
 }
 
 Expr *parse_literal(Parser *parser){
-    if(match(parser, 1, EMPTY_TOKTYPE)){
+    if(match(parser, 1, EMPTY_TOKEN_TYPE)){
         Token *empty_token = previous(parser);
         EmptyExpr *empty_expr = MEMORY_ALLOC(CTALLOCATOR, EmptyExpr, 1);
 
@@ -814,7 +814,7 @@ Expr *parse_literal(Parser *parser){
         return create_expr(EMPTY_EXPR_TYPE, empty_expr, parser);
     }
 
-	if(match(parser, 1, FALSE_TOKTYPE)){
+	if(match(parser, 1, FALSE_TOKEN_TYPE)){
         Token *bool_token = previous(parser);
         BoolExpr *bool_expr = MEMORY_ALLOC(CTALLOCATOR, BoolExpr, 1);
 
@@ -824,7 +824,7 @@ Expr *parse_literal(Parser *parser){
         return create_expr(BOOL_EXPR_TYPE, bool_expr, parser);
     }
 
-    if(match(parser, 1, TRUE_TOKTYPE)){
+    if(match(parser, 1, TRUE_TOKEN_TYPE)){
         Token *bool_token = previous(parser);
         BoolExpr *bool_expr = MEMORY_ALLOC(CTALLOCATOR, BoolExpr, 1);
 
@@ -834,7 +834,7 @@ Expr *parse_literal(Parser *parser){
         return create_expr(BOOL_EXPR_TYPE, bool_expr, parser);
     }
 
-	if(match(parser, 1, INT_TYPE_TOKTYPE)){
+	if(match(parser, 1, INT_TYPE_TOKEN_TYPE)){
 		Token *int_token = previous(parser);
         IntExpr *int_expr = MEMORY_ALLOC(CTALLOCATOR, IntExpr, 1);
 
@@ -843,7 +843,7 @@ Expr *parse_literal(Parser *parser){
         return create_expr(INT_EXPR_TYPE, int_expr, parser);
 	}
 
-	if(match(parser, 1, FLOAT_TYPE_TOKTYPE)){
+	if(match(parser, 1, FLOAT_TYPE_TOKEN_TYPE)){
 		Token *float_token = previous(parser);
         FloatExpr *float_expr = MEMORY_ALLOC(CTALLOCATOR, FloatExpr, 1);
 
@@ -852,7 +852,7 @@ Expr *parse_literal(Parser *parser){
         return create_expr(FLOAT_EXPR_TYPE, float_expr, parser);
 	}
 
-	if(match(parser, 1, STR_TYPE_TOKTYPE)){
+	if(match(parser, 1, STR_TYPE_TOKEN_TYPE)){
 		Token *string_token = previous(parser);
 		StrExpr *string_expr = MEMORY_ALLOC(CTALLOCATOR, StrExpr, 1);
 
@@ -861,7 +861,7 @@ Expr *parse_literal(Parser *parser){
 		return create_expr(STRING_EXPR_TYPE, string_expr, parser);
 	}
 
-    if(match(parser, 1, TEMPLATE_TYPE_TOKTYPE)){
+    if(match(parser, 1, TEMPLATE_TYPE_TOKEN_TYPE)){
         Token *template_token = previous(parser);
         DynArr *tokens = (DynArr *)template_token->literal;
         DynArr *exprs = MEMORY_DYNARR_PTR(CTALLOCATOR);
@@ -881,20 +881,20 @@ Expr *parse_literal(Parser *parser){
         return create_expr(TEMPLATE_EXPR_TYPE, template_expr, parser);
     }
 
-    if(match(parser, 1, ANON_TOKTYPE)){
+    if(match(parser, 1, ANON_TOKEN_TYPE)){
         Token *anon_token = NULL;
         DynArr *params = NULL;
         DynArr *stmts = NULL;
 
         anon_token = previous(parser);
 
-        if(match(parser, 1, LEFT_PAREN_TOKTYPE)){
-            if(!check(parser, RIGHT_PAREN_TOKTYPE)){
+        if(match(parser, 1, LEFT_PAREN_TOKEN_TYPE)){
+            if(!check(parser, RIGHT_PAREN_TOKEN_TYPE)){
                 params = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
                 do{
-                    unsigned char is_mutable = match(parser, 1, MUT_TOKTYPE);
-                    Token *identifier = consume(parser, IDENTIFIER_TOKTYPE, "Expect parameter identifier");
+                    unsigned char is_mutable = match(parser, 1, MUT_TOKEN_TYPE);
+                    Token *identifier = consume(parser, IDENTIFIER_TOKEN_TYPE, "Expect parameter identifier");
                     ProcParam *param = MEMORY_ALLOC(CTALLOCATOR, ProcParam, 1);
 
                     *param = (ProcParam){
@@ -903,13 +903,13 @@ Expr *parse_literal(Parser *parser){
                     };
 
                     dynarr_insert_ptr(params, param);
-                } while (match(parser, 1, COMMA_TOKTYPE));
+                } while (match(parser, 1, COMMA_TOKEN_TYPE));
             }
 
-            consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of function parameters");
+            consume(parser, RIGHT_PAREN_TOKEN_TYPE, "Expect ')' at end of function parameters");
         }
 
-        consume(parser, LEFT_BRACKET_TOKTYPE, "Expect '{' at start of function body");
+        consume(parser, LEFT_BRACKET_TOKEN_TYPE, "Expect '{' at start of function body");
 
         stmts = parse_block_stmt(parser);
 
@@ -924,11 +924,11 @@ Expr *parse_literal(Parser *parser){
         return create_expr(ANON_EXPR_TYPE, anon_expr, parser);
     }
 
-    if(match(parser, 1, LEFT_PAREN_TOKTYPE)){
+    if(match(parser, 1, LEFT_PAREN_TOKEN_TYPE)){
         Token *left_paren_token = previous(parser);
         Expr *group_sub_expr = parse_expr(parser);
 
-        consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' after expression in group expression");
+        consume(parser, RIGHT_PAREN_TOKEN_TYPE, "Expect ')' after expression in group expression");
 
         GroupExpr *group_expr = MEMORY_ALLOC(CTALLOCATOR, GroupExpr, 1);
 
@@ -940,7 +940,7 @@ Expr *parse_literal(Parser *parser){
         return create_expr(GROUP_EXPR_TYPE, group_expr, parser);
     }
 
-    if(match(parser, 1, IDENTIFIER_TOKTYPE)){
+    if(match(parser, 1, IDENTIFIER_TOKEN_TYPE)){
         Token *identifier_token = previous(parser);
         IdentifierExpr *identifier_expr = MEMORY_ALLOC(CTALLOCATOR, IdentifierExpr, 1);
 
@@ -962,11 +962,11 @@ Expr *parse_literal(Parser *parser){
 }
 
 Stmt *parse_stmt(Parser *parser){
-    if(match(parser, 1, LET_TOKTYPE)){
+    if(match(parser, 1, LET_TOKEN_TYPE)){
         return parse_var_decl_stmt(parser);
     }
 
-    if(match(parser, 1, LEFT_BRACKET_TOKTYPE)){
+    if(match(parser, 1, LEFT_BRACKET_TOKEN_TYPE)){
     	Token *left_bracket_token = previous(parser);
         DynArr *stmts = parse_block_stmt(parser);
         BlockStmt *block_stmt = MEMORY_ALLOC(CTALLOCATOR, BlockStmt, 1);
@@ -977,21 +977,21 @@ Stmt *parse_stmt(Parser *parser){
         return create_stmt(BLOCK_STMT_TYPE, block_stmt, parser);
     }
 
-	if(match(parser, 1, IF_TOKTYPE)){
+	if(match(parser, 1, IF_TOKEN_TYPE)){
         return parse_if_stmt(parser);
     }
 
-	if(match(parser, 1, WHILE_TOKTYPE)){
+	if(match(parser, 1, WHILE_TOKEN_TYPE)){
         return parse_while_stmt(parser);
     }
 
-    if(match(parser, 1, FOR_TOKTYPE)){
+    if(match(parser, 1, FOR_TOKEN_TYPE)){
         return parse_for_stmt(parser);
     }
 
-	if(match(parser, 1, STOP_TOKTYPE)){
+	if(match(parser, 1, STOP_TOKEN_TYPE)){
 		Token *stop_token = previous(parser);
-		consume(parser, SEMICOLON_TOKTYPE, "Expect ';' at end of 'stop' statement");
+		consume(parser, SEMICOLON_TOKEN_TYPE, "Expect ';' at end of 'stop' statement");
 
 		StopStmt *stop_stmt = MEMORY_ALLOC(CTALLOCATOR, StopStmt, 1);
 
@@ -1000,9 +1000,9 @@ Stmt *parse_stmt(Parser *parser){
 		return create_stmt(STOP_STMT_TYPE, stop_stmt, parser);
 	}
 
-    if(match(parser, 1, CONTINUE_TOKTYPE)){
+    if(match(parser, 1, CONTINUE_TOKEN_TYPE)){
         Token *continue_token = previous(parser);
-        consume(parser, SEMICOLON_TOKTYPE, "Expect ';' at end of 'continue' statement");
+        consume(parser, SEMICOLON_TOKEN_TYPE, "Expect ';' at end of 'continue' statement");
 
         ContinueStmt *continue_stmt = MEMORY_ALLOC(CTALLOCATOR, ContinueStmt, 1);
 
@@ -1011,27 +1011,27 @@ Stmt *parse_stmt(Parser *parser){
         return create_stmt(CONTINUE_STMT_TYPE, continue_stmt, parser);
     }
 
-    if(match(parser, 1, RET_TOKTYPE)){
+    if(match(parser, 1, RET_TOKEN_TYPE)){
         return parse_return_stmt(parser);
     }
 
-    if(match(parser, 1, PROC_TOKTYPE)){
+    if(match(parser, 1, PROC_TOKEN_TYPE)){
         return parse_function_stmt(parser);
     }
 
-    if(match(parser, 1, IMPORT_TOKTYPE)){
+    if(match(parser, 1, IMPORT_TOKEN_TYPE)){
         return parse_import_stmt(parser);
     }
 
-    if(match(parser, 1, EXPORT_TOKTYPE)){
+    if(match(parser, 1, EXPORT_TOKEN_TYPE)){
         return parse_export_stmt(parser);
     }
 
-    if(match(parser, 1, THROW_TOKTYPE)){
+    if(match(parser, 1, THROW_TOKEN_TYPE)){
         return parse_throw_stmt(parser);
     }
 
-    if(match(parser, 1, TRY_TOKTYPE)){
+    if(match(parser, 1, TRY_TOKEN_TYPE)){
         return parse_try_stmt(parser);
     }
 
@@ -1041,7 +1041,7 @@ Stmt *parse_stmt(Parser *parser){
 Stmt *parse_expr_stmt(Parser *parser){
     Expr *expr = parse_expr(parser);
 
-    consume(parser, SEMICOLON_TOKTYPE, "Expect ';' at end of statement expression");
+    consume(parser, SEMICOLON_TOKEN_TYPE, "Expect ';' at end of statement expression");
 
     ExprStmt *expr_stmt = MEMORY_ALLOC(CTALLOCATOR, ExprStmt, 1);
     Stmt *stmt = MEMORY_ALLOC(CTALLOCATOR, Stmt, 1);
@@ -1059,7 +1059,7 @@ Stmt *parse_expr_stmt(Parser *parser){
 DynArr *parse_block_stmt(Parser *parser){
     DynArr *stmts = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
-    while (!check(parser, RIGHT_BRACKET_TOKTYPE)){
+    while (!check(parser, RIGHT_BRACKET_TOKEN_TYPE)){
         Stmt *stmt = parse_stmt(parser);
 
         dynarr_insert_ptr(stmts, stmt);
@@ -1067,7 +1067,7 @@ DynArr *parse_block_stmt(Parser *parser){
 
     consume(
     	parser,
-     	RIGHT_BRACKET_TOKTYPE,
+     	RIGHT_BRACKET_TOKEN_TYPE,
       	"Expect '}' at end of block statement"
     );
 
@@ -1080,7 +1080,7 @@ IfStmtBranch *parse_if_stmt_branch(Token *branch_token, Parser *parser){
 
     consume(
     	parser,
-     	LEFT_PAREN_TOKTYPE,
+     	LEFT_PAREN_TOKEN_TYPE,
       	"Expect '(' after '%s' keyword",
        	branch_token->lexeme
     );
@@ -1089,17 +1089,17 @@ IfStmtBranch *parse_if_stmt_branch(Token *branch_token, Parser *parser){
 
 	consume(
 		parser,
-		RIGHT_PAREN_TOKTYPE,
+		RIGHT_PAREN_TOKEN_TYPE,
 		"Expect ')' at end of '%s' condition",
 		branch_token->lexeme
 	);
 
-    if(match(parser, 1, COLON_TOKTYPE)){
+    if(match(parser, 1, COLON_TOKEN_TYPE)){
 		stmts = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
         Stmt *unique_stmt = NULL;
 
-		if(match(parser, 1, RET_TOKTYPE)){
+		if(match(parser, 1, RET_TOKEN_TYPE)){
 			unique_stmt = parse_return_stmt(parser);
 		}else{
 			unique_stmt = parse_expr_stmt(parser);
@@ -1109,7 +1109,7 @@ IfStmtBranch *parse_if_stmt_branch(Token *branch_token, Parser *parser){
 	}else{
 		consume(
 			parser,
-			LEFT_BRACKET_TOKTYPE,
+			LEFT_BRACKET_TOKEN_TYPE,
 			"Expect '{' at start of '%s' body",
 			branch_token->lexeme
 		);
@@ -1136,10 +1136,10 @@ Stmt *parse_if_stmt(Parser *parser){
 
     if_branch = parse_if_stmt_branch(if_branch_token, parser);
 
-    if(check(parser, ELIF_TOKTYPE)){
+    if(check(parser, ELIF_TOKEN_TYPE)){
         elif_branches = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
-        while (match(parser, 1, ELIF_TOKTYPE)){
+        while (match(parser, 1, ELIF_TOKEN_TYPE)){
             Token *elif_branch_token = previous(parser);
             IfStmtBranch *branch = parse_if_stmt_branch(elif_branch_token, parser);
 
@@ -1147,13 +1147,13 @@ Stmt *parse_if_stmt(Parser *parser){
         }
     }
 
-	if(match(parser, 1, ELSE_TOKTYPE)){
-		if(match(parser, 1, COLON_TOKTYPE)){
+	if(match(parser, 1, ELSE_TOKEN_TYPE)){
+		if(match(parser, 1, COLON_TOKEN_TYPE)){
 			else_stmts = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
             Stmt *unique_stmt = NULL;
 
-			if(match(parser, 1, RET_TOKTYPE)){
+			if(match(parser, 1, RET_TOKEN_TYPE)){
 				unique_stmt = parse_return_stmt(parser);
 			}else{
 				unique_stmt = parse_expr_stmt(parser);
@@ -1163,7 +1163,7 @@ Stmt *parse_if_stmt(Parser *parser){
 		}else{
 			consume(
 				parser,
-				LEFT_BRACKET_TOKTYPE,
+				LEFT_BRACKET_TOKEN_TYPE,
 				"Expect '{' at start of else body"
 			);
 
@@ -1189,12 +1189,12 @@ Stmt *parse_while_stmt(Parser *parser){
 
 	while_token = previous(parser);
 
-    consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'while' keyword");
+    consume(parser, LEFT_PAREN_TOKEN_TYPE, "Expect '(' after 'while' keyword");
 
     condition = parse_expr(parser);
 
-    consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of while statement condition");
-	consume(parser, LEFT_BRACKET_TOKTYPE, "Expect '{' at start of while statement body");
+    consume(parser, RIGHT_PAREN_TOKEN_TYPE, "Expect ')' at end of while statement condition");
+	consume(parser, LEFT_BRACKET_TOKEN_TYPE, "Expect '{' at start of while statement body");
 
     stmts = parse_block_stmt(parser);
 
@@ -1218,15 +1218,15 @@ Stmt *parse_for_stmt(Parser *parser){
 
     for_token = previous(parser);
 
-    consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'for' keyworkd");
+    consume(parser, LEFT_PAREN_TOKEN_TYPE, "Expect '(' after 'for' keyworkd");
 
-    if(match(parser, 1, LET_TOKTYPE)){
+    if(match(parser, 1, LET_TOKEN_TYPE)){
         initializations = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
         do{
-            Token *identifier_token = consume(parser, IDENTIFIER_TOKTYPE, "Expect identifier");
+            Token *identifier_token = consume(parser, IDENTIFIER_TOKEN_TYPE, "Expect identifier");
 
-            consume(parser, EQUALS_TOKTYPE, "Expect '=' after identifier");
+            consume(parser, EQUALS_TOKEN_TYPE, "Expect '=' after identifier");
 
             Expr *initial_value = parse_expr(parser);
             VarDeclStmt *var_decl_stmt = MEMORY_ALLOC(CTALLOCATOR, VarDeclStmt, 1);
@@ -1239,29 +1239,29 @@ Stmt *parse_for_stmt(Parser *parser){
             };
 
             dynarr_insert_ptr(initializations, var_decl_stmt);
-        }while(match(parser, 1, COMMA_TOKTYPE));
+        }while(match(parser, 1, COMMA_TOKEN_TYPE));
     }
 
-    consume(parser, SEMICOLON_TOKTYPE, "Expect ';' before 'for' condition section");
+    consume(parser, SEMICOLON_TOKEN_TYPE, "Expect ';' before 'for' condition section");
 
-    if(!check(parser, SEMICOLON_TOKTYPE)){
+    if(!check(parser, SEMICOLON_TOKEN_TYPE)){
         condition_expr = parse_expr(parser);
     }
 
-    consume(parser, SEMICOLON_TOKTYPE, "Expect ';' before 'for' update section");
+    consume(parser, SEMICOLON_TOKEN_TYPE, "Expect ';' before 'for' update section");
 
-    if(!check(parser, RIGHT_PAREN_TOKTYPE)){
+    if(!check(parser, RIGHT_PAREN_TOKEN_TYPE)){
         update_exprs = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
         do{
             Expr *update_expr = parse_expr(parser);
 
             dynarr_insert_ptr(update_exprs, update_expr);
-        }while(match(parser, 1, COMMA_TOKTYPE));
+        }while(match(parser, 1, COMMA_TOKEN_TYPE));
     }
 
-    consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of 'for' header");
-    consume(parser, LEFT_BRACKET_TOKTYPE, "Expect '{' at start of 'for' body");
+    consume(parser, RIGHT_PAREN_TOKEN_TYPE, "Expect ')' at end of 'for' header");
+    consume(parser, LEFT_BRACKET_TOKEN_TYPE, "Expect '{' at start of 'for' body");
 
     stmts = parse_block_stmt(parser);
 
@@ -1284,11 +1284,11 @@ Stmt *parse_throw_stmt(Parser *parser){
 
     throw_token = previous(parser);
 
-	if(!check(parser, SEMICOLON_TOKTYPE)){
+	if(!check(parser, SEMICOLON_TOKEN_TYPE)){
         value = parse_expr(parser);
     }
 
-    consume(parser, SEMICOLON_TOKTYPE, "Expect ';' at end of throw statement");
+    consume(parser, SEMICOLON_TOKEN_TYPE, "Expect ';' at end of throw statement");
 
     ThrowStmt *throw_stmt = MEMORY_ALLOC(CTALLOCATOR, ThrowStmt, 1);
 
@@ -1311,29 +1311,29 @@ Stmt *parse_try_stmt(Parser *parser){
 
     consume(
         parser,
-        LEFT_BRACKET_TOKTYPE,
+        LEFT_BRACKET_TOKEN_TYPE,
         "Expect '{' after 'try' keyword"
     );
 
     try_stmts = parse_block_stmt(parser);
     catch_token = consume(
         parser,
-        CATCH_TOKTYPE,
+        CATCH_TOKEN_TYPE,
         "Expect 'catch' keyword after try block, but got: '%s'",
         peek(parser)->lexeme
     );
 
-    if(!check(parser, LEFT_BRACKET_TOKTYPE)){
+    if(!check(parser, LEFT_BRACKET_TOKEN_TYPE)){
         err_identifier = consume(
             parser,
-            IDENTIFIER_TOKTYPE,
+            IDENTIFIER_TOKEN_TYPE,
             "Expect error identifier after 'catch' keyword"
         );
     }
 
     consume(
         parser,
-        LEFT_BRACKET_TOKTYPE,
+        LEFT_BRACKET_TOKEN_TYPE,
         "Expect '{' after 'catch' keyword"
     );
 
@@ -1358,13 +1358,13 @@ Stmt *parse_return_stmt(Parser *parser){
 
     return_token = previous(parser);
 
-    if(!check(parser, SEMICOLON_TOKTYPE)){
+    if(!check(parser, SEMICOLON_TOKEN_TYPE)){
         value = parse_expr(parser);
     }
 
     consume(
         parser,
-        SEMICOLON_TOKTYPE,
+        SEMICOLON_TOKEN_TYPE,
         "Expect ';' at end of return statement"
     );
 
@@ -1384,20 +1384,20 @@ Stmt *parse_var_decl_stmt(Parser *parser){
     Token *identifier_token = NULL;
     Expr *initializer_expr = NULL;
 
-    is_mutable = match(parser, 1, MUT_TOKTYPE);
+    is_mutable = match(parser, 1, MUT_TOKEN_TYPE);
     identifier_token = consume(
         parser,
-        IDENTIFIER_TOKTYPE,
+        IDENTIFIER_TOKEN_TYPE,
         "Expect symbol name after 'let' or 'let mut' keyword(s)");
 
-    if(match(parser, 1, EQUALS_TOKTYPE)){
+    if(match(parser, 1, EQUALS_TOKEN_TYPE)){
         is_initialized = 1;
         initializer_expr = parse_expr(parser);
     }
 
     consume(
         parser,
-        SEMICOLON_TOKTYPE,
+        SEMICOLON_TOKEN_TYPE,
         "Expect ';' at end of symbol declaration");
 
     VarDeclStmt *var_decl_stmt = MEMORY_ALLOC(CTALLOCATOR, VarDeclStmt, 1);
@@ -1429,19 +1429,19 @@ Stmt *parse_function_stmt(Parser *parser){
 
     name_token = consume(
         parser,
-        IDENTIFIER_TOKTYPE,
+        IDENTIFIER_TOKEN_TYPE,
         "Expect function name after 'proc' keyword"
     );
 
-    if(match(parser, 1, LEFT_PAREN_TOKTYPE)){
-        if(!check(parser, RIGHT_PAREN_TOKTYPE)){
+    if(match(parser, 1, LEFT_PAREN_TOKEN_TYPE)){
+        if(!check(parser, RIGHT_PAREN_TOKEN_TYPE)){
             params = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
             do{
-                unsigned char is_mutable = match(parser, 1, MUT_TOKTYPE);
+                unsigned char is_mutable = match(parser, 1, MUT_TOKEN_TYPE);
                 Token *identifier = consume(
                     parser,
-                    IDENTIFIER_TOKTYPE,
+                    IDENTIFIER_TOKEN_TYPE,
                     "Expect function parameter name"
                 );
                 ProcParam *param = MEMORY_ALLOC(CTALLOCATOR, ProcParam, 1);
@@ -1452,17 +1452,17 @@ Stmt *parse_function_stmt(Parser *parser){
                 };
 
                 dynarr_insert_ptr(params, param);
-            } while (match(parser, 1, COMMA_TOKTYPE));
+            } while (match(parser, 1, COMMA_TOKEN_TYPE));
         }
 
         consume(
             parser,
-            RIGHT_PAREN_TOKTYPE,
+            RIGHT_PAREN_TOKEN_TYPE,
             "Expect ')' at end of function parameters"
         );
     }
 
-    if(match(parser, 1, COLON_TOKTYPE)){
+    if(match(parser, 1, COLON_TOKEN_TYPE)){
 		stmts = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
         Stmt *unique_stmt = parse_return_stmt(parser);
@@ -1471,7 +1471,7 @@ Stmt *parse_function_stmt(Parser *parser){
 	}else{
 		consume(
             parser,
-            LEFT_BRACKET_TOKTYPE,
+            LEFT_BRACKET_TOKEN_TYPE,
             "Expect '{' at start of function body"
         );
 
@@ -1509,22 +1509,22 @@ Stmt *parse_import_stmt(Parser *parser){
     names = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
     do{
-        Token *name = consume(parser, IDENTIFIER_TOKTYPE, "Expect module name");
+        Token *name = consume(parser, IDENTIFIER_TOKEN_TYPE, "Expect module name");
 
         dynarr_insert_ptr(names, name);
-    }while(match(parser, 1, DOT_TOKTYPE));
+    }while(match(parser, 1, DOT_TOKEN_TYPE));
 
-    if(match(parser, 1, AS_TOKTYPE)){
+    if(match(parser, 1, AS_TOKEN_TYPE)){
         alt_name = consume(
             parser,
-            IDENTIFIER_TOKTYPE,
+            IDENTIFIER_TOKEN_TYPE,
             "Expect module alternative name after 'as' keyword"
         );
     }
 
     consume(
         parser,
-        SEMICOLON_TOKTYPE,
+        SEMICOLON_TOKEN_TYPE,
         "Expect ';' at end of import statement"
     );
 
@@ -1546,14 +1546,14 @@ Stmt *parse_export_stmt(Parser *parser){
     export_token = previous(parser);
     symbols = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
-    consume(parser, LEFT_BRACKET_TOKTYPE, "Expect '{' at start of export symbols");
+    consume(parser, LEFT_BRACKET_TOKEN_TYPE, "Expect '{' at start of export symbols");
 
     do{
-        Token *identifier = consume(parser, IDENTIFIER_TOKTYPE, "Expect symbol name");
+        Token *identifier = consume(parser, IDENTIFIER_TOKEN_TYPE, "Expect symbol name");
         dynarr_insert_ptr(symbols, identifier);
-    } while (match(parser, 1, COMMA_TOKTYPE));
+    } while (match(parser, 1, COMMA_TOKEN_TYPE));
 
-    consume(parser, RIGHT_BRACKET_TOKTYPE, "Expect '}' at end of export symbols");
+    consume(parser, RIGHT_BRACKET_TOKEN_TYPE, "Expect '}' at end of export symbols");
 
     ExportStmt *export_stmt = MEMORY_ALLOC(CTALLOCATOR, ExportStmt, 1);
 

@@ -245,7 +245,7 @@ void comment(Lexer *lexer){
 }
 
 Token *decimal(Lexer *lexer){
-    TokType type = INT_TYPE_TOKTYPE;
+    TokType type = INT_TYPE_TOKEN_TYPE;
 
     while (!is_at_end(lexer) && is_dec_digit(peek(lexer))){
         advance(lexer);
@@ -257,7 +257,7 @@ Token *decimal(Lexer *lexer){
             return NULL;
         }
 
-		type = FLOAT_TYPE_TOKTYPE;
+		type = FLOAT_TYPE_TOKEN_TYPE;
 
 		while (!is_at_end(lexer) && is_dec_digit(peek(lexer))){
             advance(lexer);
@@ -267,7 +267,7 @@ Token *decimal(Lexer *lexer){
     size_t lexeme_len;
     char *lexeme = current_lexeme(lexer, &lexeme_len);
 
-    if(type == INT_TYPE_TOKTYPE){
+    if(type == INT_TYPE_TOKEN_TYPE){
         int64_t *value = MEMORY_ALLOC(lexer->rtallocator, int64_t, 1);
         utils_decimal_str_to_i64(lexeme, value);
 
@@ -321,7 +321,7 @@ Token *hexadecimal(Lexer *lexer){
     return create_token_raw(
         lexer,
         lexer->line,
-        INT_TYPE_TOKTYPE,
+        INT_TYPE_TOKEN_TYPE,
         lexeme_len,
         lexeme,
         sizeof(int64_t),
@@ -345,7 +345,7 @@ Token *identifier(Lexer *lexer){
         return create_token(lexer, *type);
     }
 
-    return create_token(lexer, IDENTIFIER_TOKTYPE);
+    return create_token(lexer, IDENTIFIER_TOKEN_TYPE);
 }
 
 int string_placeholder(DynArr *tokens, Lexer *lexer){
@@ -355,130 +355,130 @@ int string_placeholder(DynArr *tokens, Lexer *lexer){
 
         switch (c){
             case '?':{
-                token = create_token(lexer, QUESTION_MARK_TOKTYPE);
+                token = create_token(lexer, QUESTION_MARK_TOKEN_TYPE);
 
                 break;
             }case ':':{
-                token = create_token(lexer, COLON_TOKTYPE);
+                token = create_token(lexer, COLON_TOKEN_TYPE);
 
                 break;
             }case '[':{
-                token = create_token(lexer, LEFT_SQUARE_TOKTYPE);
+                token = create_token(lexer, LEFT_SQUARE_TOKEN_TYPE);
 
                 break;
             }case ']':{
-                token = create_token(lexer, RIGHT_SQUARE_TOKTYPE);
+                token = create_token(lexer, RIGHT_SQUARE_TOKEN_TYPE);
 
                 break;
             }case '(':{
-                token = create_token(lexer, LEFT_PAREN_TOKTYPE);
+                token = create_token(lexer, LEFT_PAREN_TOKEN_TYPE);
 
                 break;
             }case ')':{
-                token = create_token(lexer, RIGHT_PAREN_TOKTYPE);
+                token = create_token(lexer, RIGHT_PAREN_TOKEN_TYPE);
 
                 break;
             }case '{':{
-                token = create_token(lexer, LEFT_BRACKET_TOKTYPE);
+                token = create_token(lexer, LEFT_BRACKET_TOKEN_TYPE);
 
                 break;
             }case '}':{
-                token = create_token(lexer, RIGHT_BRACKET_TOKTYPE);
+                token = create_token(lexer, RIGHT_BRACKET_TOKEN_TYPE);
 
                 break;
             }case '~':{
-                token = create_token(lexer, NOT_BITWISE_TOKTYPE);
+                token = create_token(lexer, NOT_BITWISE_TOKEN_TYPE);
 
                 break;
             }case '&':{
-                token = create_token(lexer, AND_BITWISE_TOKTYPE);
+                token = create_token(lexer, AND_BITWISE_TOKEN_TYPE);
 
                 break;
             }case '^':{
-                token = create_token(lexer, XOR_BITWISE_TOKTYPE);
+                token = create_token(lexer, XOR_BITWISE_TOKEN_TYPE);
 
                 break;
             }case '|':{
-                token = create_token(lexer, OR_BITWISE_TOKTYPE);
+                token = create_token(lexer, OR_BITWISE_TOKEN_TYPE);
 
                 break;
             }case ',':{
-                token = create_token(lexer, COMMA_TOKTYPE);
+                token = create_token(lexer, COMMA_TOKEN_TYPE);
 
                 break;
             }case '.':{
                 if(match(lexer, '.')){
-                    token = create_token(lexer, DOUBLE_DOT_TOKTYPE);
+                    token = create_token(lexer, DOUBLE_DOT_TOKEN_TYPE);
                 }else{
-                    token = create_token(lexer, DOT_TOKTYPE);
+                    token = create_token(lexer, DOT_TOKEN_TYPE);
                 }
 
                 break;
             }case '+':{
                 if(match(lexer, '=')){
-                    token = create_token(lexer, COMPOUND_ADD_TOKTYPE);
+                    token = create_token(lexer, COMPOUND_ADD_TOKEN_TYPE);
                 }else{
-                    token = create_token(lexer, PLUS_TOKTYPE);
+                    token = create_token(lexer, PLUS_TOKEN_TYPE);
                 }
 
                 break;
             }case '-':{
                 if(match(lexer, '=')){
-                    token = create_token(lexer, COMPOUND_SUB_TOKTYPE);
+                    token = create_token(lexer, COMPOUND_SUB_TOKEN_TYPE);
                 }else{
-                    token = create_token(lexer, MINUS_TOKTYPE);
+                    token = create_token(lexer, MINUS_TOKEN_TYPE);
                 }
 
                 break;
             }case '*':{
                 if(match(lexer, '*')){
-                    token = create_token(lexer, DOUBLE_ASTERISK_TOKTYPE);
+                    token = create_token(lexer, DOUBLE_ASTERISK_TOKEN_TYPE);
                 }else if(match(lexer, '=')){
-                    token = create_token(lexer, COMPOUND_MUL_TOKTYPE);
+                    token = create_token(lexer, COMPOUND_MUL_TOKEN_TYPE);
                 }else{
-                    token = create_token(lexer, ASTERISK_TOKTYPE);
+                    token = create_token(lexer, ASTERISK_TOKEN_TYPE);
                 }
 
                 break;
             }case '/':{
                 if(match(lexer, '=')){
-                    token = create_token(lexer, COMPOUND_DIV_TOKTYPE);
+                    token = create_token(lexer, COMPOUND_DIV_TOKEN_TYPE);
                 }else{
-                    token = create_token(lexer, SLASH_TOKTYPE);
+                    token = create_token(lexer, SLASH_TOKEN_TYPE);
                 }
 
                 break;
             }case '<':{
                 if(match(lexer, '<')){
-                    token = create_token(lexer, LEFT_SHIFT_TOKTYPE);
+                    token = create_token(lexer, LEFT_SHIFT_TOKEN_TYPE);
                 }else if(match(lexer, '=')){
-                    token = create_token(lexer, LESS_EQUALS_TOKTYPE);
+                    token = create_token(lexer, LESS_EQUALS_TOKEN_TYPE);
                 }else{
-                    token = create_token(lexer, LESS_TOKTYPE);
+                    token = create_token(lexer, LESS_TOKEN_TYPE);
                 }
 
                 break;
             }case '>':{
                 if(match(lexer, '>')){
-                    token = create_token(lexer, RIGHT_SHIFT_TOKTYPE);
+                    token = create_token(lexer, RIGHT_SHIFT_TOKEN_TYPE);
                 }else if(match(lexer, '=')){
-                    token = create_token(lexer, GREATER_EQUALS_TOKTYPE);
+                    token = create_token(lexer, GREATER_EQUALS_TOKEN_TYPE);
                 }else{
-                    token = create_token(lexer, GREATER_TOKTYPE);
+                    token = create_token(lexer, GREATER_TOKEN_TYPE);
                 }
 
                 break;
             }case '=':{
                 if(match(lexer, '=')){
-                    token = create_token(lexer, EQUALS_EQUALS_TOKTYPE);
+                    token = create_token(lexer, EQUALS_EQUALS_TOKEN_TYPE);
                 }
 
                 break;
             }case '!':{
                 if(match(lexer, '=')){
-                    token = create_token(lexer, NOT_EQUALS_TOKTYPE);
+                    token = create_token(lexer, NOT_EQUALS_TOKEN_TYPE);
                 }else{
-                    token = create_token(lexer, EXCLAMATION_TOKTYPE);
+                    token = create_token(lexer, EXCLAMATION_TOKEN_TYPE);
                 }
 
                 break;
@@ -574,7 +574,7 @@ Token *string(Lexer *lexer){
             Token *str_token = create_token_raw(
                 lexer,
                 lexer->line,
-                STR_TYPE_TOKTYPE,
+                STR_TYPE_TOKEN_TYPE,
                 lexeme_len,
                 lexeme,
                 literal_size,
@@ -666,7 +666,7 @@ Token *string(Lexer *lexer){
             Token *token = create_token_raw(
                 lexer,
                 lexer->line,
-                STR_TYPE_TOKTYPE,
+                STR_TYPE_TOKEN_TYPE,
                 lexeme_len,
                 lexeme,
                 literal_size,
@@ -681,7 +681,7 @@ Token *string(Lexer *lexer){
         Token *eof_token = create_token_raw(
             lexer,
             lexer->line,
-            EOF_TOKTYPE,
+            EOF_TOKEN_TYPE,
             lexeme_len,
             lexeme,
             0,
@@ -692,7 +692,7 @@ Token *string(Lexer *lexer){
 
         return create_token_literal(
             lexer,
-            TEMPLATE_TYPE_TOKTYPE,
+            TEMPLATE_TYPE_TOKEN_TYPE,
             sizeof(DynArr *),
             str_tokens
         );
@@ -714,64 +714,64 @@ Token *string(Lexer *lexer){
         );
     }
 
-    return create_token_literal(lexer, STR_TYPE_TOKTYPE, literal_size, literal);
+    return create_token_literal(lexer, STR_TYPE_TOKEN_TYPE, literal_size, literal);
 }
 
 Token *scan_token(Lexer *lexer, char c){
     switch (c){
         case '?':{
-        	return create_token(lexer, QUESTION_MARK_TOKTYPE);
+        	return create_token(lexer, QUESTION_MARK_TOKEN_TYPE);
         }case ':':{
-			return create_token(lexer, COLON_TOKTYPE);
+			return create_token(lexer, COLON_TOKEN_TYPE);
 		}case ';':{
-            return create_token(lexer, SEMICOLON_TOKTYPE);
+            return create_token(lexer, SEMICOLON_TOKEN_TYPE);
         }case '[':{
-            return create_token(lexer, LEFT_SQUARE_TOKTYPE);
+            return create_token(lexer, LEFT_SQUARE_TOKEN_TYPE);
         }case ']':{
-            return create_token(lexer, RIGHT_SQUARE_TOKTYPE);
+            return create_token(lexer, RIGHT_SQUARE_TOKEN_TYPE);
         }case '(':{
-            return create_token(lexer, LEFT_PAREN_TOKTYPE);
+            return create_token(lexer, LEFT_PAREN_TOKEN_TYPE);
         }case ')':{
-            return create_token(lexer, RIGHT_PAREN_TOKTYPE);
+            return create_token(lexer, RIGHT_PAREN_TOKEN_TYPE);
         }case '{':{
-            return create_token(lexer, LEFT_BRACKET_TOKTYPE);
+            return create_token(lexer, LEFT_BRACKET_TOKEN_TYPE);
         }case '}':{
-            return create_token(lexer, RIGHT_BRACKET_TOKTYPE);
+            return create_token(lexer, RIGHT_BRACKET_TOKEN_TYPE);
         }case '~':{
-            return create_token(lexer, NOT_BITWISE_TOKTYPE);
+            return create_token(lexer, NOT_BITWISE_TOKEN_TYPE);
         }case '&':{
-            return create_token(lexer, AND_BITWISE_TOKTYPE);
+            return create_token(lexer, AND_BITWISE_TOKEN_TYPE);
         }case '^':{
-            return create_token(lexer, XOR_BITWISE_TOKTYPE);
+            return create_token(lexer, XOR_BITWISE_TOKEN_TYPE);
         }case '|':{
-            return create_token(lexer, OR_BITWISE_TOKTYPE);
+            return create_token(lexer, OR_BITWISE_TOKEN_TYPE);
         }case ',':{
-			return create_token(lexer, COMMA_TOKTYPE);
+			return create_token(lexer, COMMA_TOKEN_TYPE);
 		}case '.':{
             if(match(lexer, '.')){
-                return create_token(lexer, DOUBLE_DOT_TOKTYPE);
+                return create_token(lexer, DOUBLE_DOT_TOKEN_TYPE);
             }else{
-                return create_token(lexer, DOT_TOKTYPE);
+                return create_token(lexer, DOT_TOKEN_TYPE);
             }
 		}case '+':{
 			if(match(lexer, '=')){
-				return create_token(lexer, COMPOUND_ADD_TOKTYPE);
+				return create_token(lexer, COMPOUND_ADD_TOKEN_TYPE);
 			}else{
-				return create_token(lexer, PLUS_TOKTYPE);
+				return create_token(lexer, PLUS_TOKEN_TYPE);
 			}
         }case '-':{
 			if(match(lexer, '=')){
-				return create_token(lexer, COMPOUND_SUB_TOKTYPE);
+				return create_token(lexer, COMPOUND_SUB_TOKEN_TYPE);
 			}else{
-				return create_token(lexer, MINUS_TOKTYPE);
+				return create_token(lexer, MINUS_TOKEN_TYPE);
 			}
         }case '*':{
 			if(match(lexer, '*')){
-                return create_token(lexer, DOUBLE_ASTERISK_TOKTYPE);
+                return create_token(lexer, DOUBLE_ASTERISK_TOKEN_TYPE);
             }else if(match(lexer, '=')){
-				return create_token(lexer, COMPOUND_MUL_TOKTYPE);
+				return create_token(lexer, COMPOUND_MUL_TOKEN_TYPE);
 			}else{
-				return create_token(lexer, ASTERISK_TOKTYPE);
+				return create_token(lexer, ASTERISK_TOKEN_TYPE);
 			}
         }case '/':{
 			if(match(lexer, '/')){
@@ -779,37 +779,37 @@ Token *scan_token(Lexer *lexer, char c){
 
                 return NULL;
 			}else if(match(lexer, '=')){
-				return create_token(lexer, COMPOUND_DIV_TOKTYPE);
+				return create_token(lexer, COMPOUND_DIV_TOKEN_TYPE);
 			}else{
-				return create_token(lexer, SLASH_TOKTYPE);
+				return create_token(lexer, SLASH_TOKEN_TYPE);
 			}
         }case '<':{
             if(match(lexer, '<')){
-                return create_token(lexer, LEFT_SHIFT_TOKTYPE);
+                return create_token(lexer, LEFT_SHIFT_TOKEN_TYPE);
             }else if(match(lexer, '=')){
-				return create_token(lexer, LESS_EQUALS_TOKTYPE);
+				return create_token(lexer, LESS_EQUALS_TOKEN_TYPE);
 			}else{
-				return create_token(lexer, LESS_TOKTYPE);
+				return create_token(lexer, LESS_TOKEN_TYPE);
 			}
         }case '>':{
             if(match(lexer, '>')){
-                return create_token(lexer, RIGHT_SHIFT_TOKTYPE);
+                return create_token(lexer, RIGHT_SHIFT_TOKEN_TYPE);
             }else if(match(lexer, '=')){
-				return create_token(lexer, GREATER_EQUALS_TOKTYPE);
+				return create_token(lexer, GREATER_EQUALS_TOKEN_TYPE);
 			}else{
-				return create_token(lexer, GREATER_TOKTYPE);
+				return create_token(lexer, GREATER_TOKEN_TYPE);
 			}
         }case '=':{
             if(match(lexer, '=')){
-				return create_token(lexer, EQUALS_EQUALS_TOKTYPE);
+				return create_token(lexer, EQUALS_EQUALS_TOKEN_TYPE);
 			}else{
-				return create_token(lexer, EQUALS_TOKTYPE);
+				return create_token(lexer, EQUALS_TOKEN_TYPE);
 			}
         }case '!':{
             if(match(lexer, '=')){
-				return create_token(lexer, NOT_EQUALS_TOKTYPE);
+				return create_token(lexer, NOT_EQUALS_TOKEN_TYPE);
 			}else{
-				return create_token(lexer, EXCLAMATION_TOKTYPE);
+				return create_token(lexer, EXCLAMATION_TOKEN_TYPE);
 			}
         }case '\n':{
             lexer->line++;
@@ -900,7 +900,7 @@ int lexer_lex(
         	create_token_raw(
                 lexer,
          		-1,
-           		EOF_TOKTYPE,
+           		EOF_TOKEN_TYPE,
              	lexeme_len,
               	lexeme,
                	0,
