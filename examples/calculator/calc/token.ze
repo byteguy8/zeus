@@ -1,0 +1,31 @@
+let PLUS_TOKEN_TYPE     = 0;
+let MINUS_TOKEN_TYPE    = 1;
+let ASTERISK_TOKEN_TYPE = 2;
+let SLASH_TOKEN_TYPE    = 3;
+
+let NUMBER_TOKEN_TYPE   = 4;
+
+let EOF_TOKEN_TYPE      = 5;
+
+proc new(type, line, lexeme, literal){
+    ret record{
+        type: type,
+        start_col: -1,
+        end_col: -1,
+        start_line: line,
+        end_line: line,
+        lexeme: lexeme,
+        literal: literal
+    };
+}
+
+export{
+    PLUS_TOKEN_TYPE,
+    MINUS_TOKEN_TYPE,
+    ASTERISK_TOKEN_TYPE,
+    SLASH_TOKEN_TYPE,
+    NUMBER_TOKEN_TYPE,
+    EOF_TOKEN_TYPE,
+
+    new
+}

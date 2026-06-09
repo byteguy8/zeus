@@ -1,0 +1,9 @@
+let TERM_EXPR_TYPE    = 0;
+let FACTOR_EXPR_TYPE  = 1;
+let PRIMARY_EXPR_TYPE = 2;
+
+export{
+    TERM_EXPR_TYPE,
+    FACTOR_EXPR_TYPE,
+    PRIMARY_EXPR_TYPE
+}

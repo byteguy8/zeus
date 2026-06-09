@@ -1,0 +1,18 @@
+import calc.lexer;
+import calc.parser;
+import calc.interpreter;
+
+while(true){
+    try{
+        print("? ");
+
+        let input = readln();
+        let tokens = lexer.lex(input);
+        let expr = parser.parse(tokens);
+        let result = interpreter.interpret(expr);
+
+        println("= {result}");
+    }catch err{
+        println(err);
+    }
+}

@@ -1,0 +1,132 @@
+import token as Token;
+
+proc error(lexer, msg){
+    throw "ERROR[at line {lexer.line}]: {msg}";
+}
+
+proc is_at_end(lexer){
+    ret lexer.current >= lexer.source.len();
+}
+
+proc is_digit(c){
+    if((c is empty)){
+        ret false;
+    }
+
+    let code = c.code(0);
+
+    ret code >= "0".code(0) and code <= "9".code(0);
+}
+
+proc match(lexer, c){
+    let current = peek(lexer);
+    let must_advance = !(current is empty) and current == c;
+
+    if(must_advance){
+        advance(lexer);
+    }
+
+    ret must_advance;
+}
+
+proc peek(lexer){
+    if(is_at_end(lexer)){
+        ret empty;
+    }
+
+    ret lexer.source[lexer.current];
+}
+
+proc advance(lexer){
+    if(is_at_end(lexer)){
+        ret empty;
+    }
+
+    ret lexer.source[(lexer.current += 1) - 1];
+}
+
+proc add_token_literal(lexer, type, lexeme, literal){
+    let token = Token.new(
+        type,
+        lexer.line,
+        lexeme,
+        literal
+    );
+
+    lexer.tokens.insert(token);
+}
+
+proc add_token(lexer, type){
+    let lexeme = lexer.source.substr(lexer.start, lexer.current);
+
+    add_token_literal(lexer, type, lexeme, empty);
+}
+
+proc number(lexer){
+    while(is_digit(peek(lexer))){
+        advance(lexer);
+    }
+
+    if(match(lexer, ".")){
+        let c = peek(lexer);
+
+        if(!is_digit(c)){
+            error(lexer, "Expect digit after decimal dot, but got: '{c is empty ? "EOF" : c}'");
+        }
+
+        while(is_digit(peek(lexer))){
+            advance(lexer);
+        }
+    }
+
+    let lexeme = lexer.source.substr(lexer.start, lexer.current);
+
+    add_token_literal(lexer, Token.NUMBER_TOKEN_TYPE, lexeme, to_float(lexeme));
+}
+
+proc lex_token(lexer){
+    let c = advance(lexer);
+
+    if(((c == " ") or (c == "\t"))){
+        ret;
+    }elif(c == "\n"){
+        lexer.line += 1;
+    }elif(c == "+"){
+        add_token(lexer, Token.PLUS_TOKEN_TYPE);
+    }elif(c == "-"){
+        add_token(lexer, Token.MINUS_TOKEN_TYPE);
+    }elif(c == "*"){
+        add_token(lexer, Token.ASTERISK_TOKEN_TYPE);
+    }elif(c == "/"){
+        add_token(lexer, Token.SLASH_TOKEN_TYPE);
+    }else{
+        if(is_digit(c)){
+            number(lexer);
+        }else{
+            error(lexer, "Unknown token: '{c}'");
+        }
+    }
+}
+
+proc lex(source){
+    let lexer = record{
+        line: 1,
+        start: 0,
+        current: 0,
+        source: source,
+        tokens: list()
+    };
+
+    while(!is_at_end(lexer)){
+        lex_token(lexer);
+        lexer.start = lexer.current;
+    }
+
+    lexer.tokens.insert(Token.new(Token.EOF_TOKEN_TYPE, lexer.line, "EOF", empty));
+
+    ret lexer.tokens;
+}
+
+export{
+    lex
+}

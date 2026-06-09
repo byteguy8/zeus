@@ -1,0 +1,99 @@
+import token as Token;
+import expr as Expr;
+
+proc error(parser, msg){
+    let token = peek(parser);
+
+    throw "ERROR[at line: {token.start_line}]: {msg}";
+}
+
+proc is_at_end(parser){
+    ret parser.tokens[parser.current].type == Token.EOF_TOKEN_TYPE;
+}
+
+proc peek(parser){
+    ret parser.tokens[parser.current];
+}
+
+proc advance(parser){
+    ret parser.tokens[(parser.current += 1) - 1];
+}
+
+proc previous(parser){
+    ret parser.tokens[parser.current - 1];
+}
+
+proc match(parser, types){
+    let current = peek(parser);
+
+    for(let i = 0; i < types.len(); i += 1){
+        if(types[i] == current.type){
+            advance(parser);
+
+            ret true;
+        }
+    }
+
+    ret false;
+}
+
+proc term_expr(parser){
+    let mut left = factor_expr(parser);
+
+    while(match(parser, array(Token.PLUS_TOKEN_TYPE, Token.MINUS_TOKEN_TYPE))){
+        let operator = previous(parser);
+        let right = factor_expr(parser);
+        left = record{
+            type: Expr.TERM_EXPR_TYPE,
+            left: left,
+            operator: operator,
+            right: right
+        };
+    }
+
+    ret left;
+}
+
+proc factor_expr(parser){
+    let mut left = primary_expr(parser);
+
+    while(match(parser, array(Token.ASTERISK_TOKEN_TYPE, Token.SLASH_TOKEN_TYPE))){
+        let operator = previous(parser);
+        let right = primary_expr(parser);
+        left = record{
+            type: Expr.FACTOR_EXPR_TYPE,
+            left: left,
+            operator: operator,
+            right: right
+        };
+    }
+
+    ret left;
+}
+
+proc primary_expr(parser){
+    if(match(parser, array(Token.NUMBER_TOKEN_TYPE))){
+        let token = previous(parser);
+
+        ret record{
+            type: Expr.PRIMARY_EXPR_TYPE,
+            token: token,
+            value: to_float(token.lexeme)
+        };
+    }
+
+    error(parser, "Expect number, but got: {peek(parser).lexeme}");
+}
+
+proc parse(tokens){
+    let parser = record{
+        current: 0,
+        tokens: tokens
+    };
+
+    ret term_expr(parser);
+}
+
+export{
+    parse
+}

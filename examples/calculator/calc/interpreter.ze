@@ -1,0 +1,38 @@
+import token as Token;
+import expr as Expr;
+
+proc interpret(expr){
+    if(expr.type == Expr.PRIMARY_EXPR_TYPE){
+        ret expr.value;
+    }elif(expr.type == Expr.TERM_EXPR_TYPE){
+        let a = interpret(expr.left);
+        let b = interpret(expr.right);
+        let op = expr.operator.type;
+
+        if(op == Token.PLUS_TOKEN_TYPE){
+            ret a + b;
+        }elif(op == Token.MINUS_TOKEN_TYPE){
+            ret a - b;
+        }else{
+            throw "Illegal operator";
+        }
+    }elif(expr.type == Expr.FACTOR_EXPR_TYPE){
+        let a = interpret(expr.left);
+        let b = interpret(expr.right);
+        let op = expr.operator.type;
+
+        if(op == Token.ASTERISK_TOKEN_TYPE){
+            ret a * b;
+        }elif(op == Token.SLASH_TOKEN_TYPE){
+            ret a / b;
+        }else{
+            throw "Illegal operator";
+        }
+    }else{
+        throw "Illegal expression";
+    }
+}
+
+export{
+    interpret
+}
