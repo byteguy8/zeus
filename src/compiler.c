@@ -976,13 +976,13 @@ void compile_expr(Compiler *compiler, Expr *expr){
             Block *block = push_block(compiler);
 
             for (size_t i = 0; i < params_len; i++){
-                Token *param_identifier = dynarr_get_ptr(params, i);
+                ProcParam *param = DYNARR_GET_PTR_AS(params, ProcParam, i);
 
                 scope_manager_define_local(
                     manager,
+                    param->is_mutable,
                     1,
-                    1,
-                    param_identifier
+                    param->identifier
                 );
             }
 
@@ -1389,7 +1389,7 @@ void compile_expr(Compiler *compiler, Expr *expr){
                                 error(
                                     compiler,
                                     assign_expr->equals_token,
-                                    "Local symbol '%s' declared as immutable and already initialized",
+                                    "Local symbol '%s' is immutable and already initialized",
                                     identifier_token->lexeme
                                 );
                             }
@@ -1506,7 +1506,7 @@ void compile_expr(Compiler *compiler, Expr *expr){
 	                        	error(
 	                            	compiler,
 	                              	operator_token,
-		                            "Local symbol '%s' declared as immutable and already initialized",
+		                            "Local symbol '%s' is immutable and already initialized",
 	                              	identifier_token->lexeme
 	                          	);
 	                      	}
@@ -2750,13 +2750,13 @@ void proc_stmt(Compiler *compiler, ProcStmt *proc_stmt){
     Block *block = push_block(compiler);
 
     for (size_t i = 0; i < params_len; i++){
-        Token *param_identifier = dynarr_get_ptr(params, i);
+        ProcParam *param = DYNARR_GET_PTR_AS(params, ProcParam, i);
 
         scope_manager_define_local(
             manager,
+            param->is_mutable,
             1,
-            1,
-            param_identifier
+            param->identifier
         );
     }
 

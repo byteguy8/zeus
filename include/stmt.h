@@ -111,6 +111,11 @@ typedef struct proc_prototype{
     uint8_t arity;
 }ProcPrototype;
 
+typedef struct proc_param{
+    unsigned char is_mutable;
+    Token         *identifier;
+}ProcParam;
+
 typedef struct function_stmt{
     Token  *identifier;
     DynArr *params;

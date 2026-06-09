@@ -846,8 +846,16 @@ Expr *parse_literal(Parser *parser){
             params = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
             do{
-                Token *param_identifier = consume(parser, IDENTIFIER_TOKTYPE, "Expect parameter identifier");
-                dynarr_insert_ptr(params, param_identifier);
+                unsigned char is_mutable = match(parser, 1, MUT_TOKTYPE);
+                Token *identifier = consume(parser, IDENTIFIER_TOKTYPE, "Expect parameter identifier");
+                ProcParam *param = MEMORY_ALLOC(CTALLOCATOR, ProcParam, 1);
+
+                *param = (ProcParam){
+                    .is_mutable = is_mutable,
+                    .identifier = identifier
+                };
+
+                dynarr_insert_ptr(params, param);
             } while (match(parser, 1, COMMA_TOKTYPE));
         }
 
@@ -1406,13 +1414,20 @@ Stmt *parse_function_stmt(Parser *parser){
         params = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
         do{
-            Token *param_token = consume(
+            unsigned char is_mutable = match(parser, 1, MUT_TOKTYPE);
+            Token *identifier = consume(
                 parser,
                 IDENTIFIER_TOKTYPE,
                 "Expect function parameter name"
             );
+            ProcParam *param = MEMORY_ALLOC(CTALLOCATOR, ProcParam, 1);
 
-            dynarr_insert_ptr(params, param_token);
+            *param = (ProcParam){
+                .is_mutable = is_mutable,
+                .identifier = identifier
+            };
+
+            dynarr_insert_ptr(params, param);
         } while (match(parser, 1, COMMA_TOKTYPE));
     }
 
