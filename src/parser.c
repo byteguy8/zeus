@@ -1129,16 +1129,16 @@ Stmt *parse_if_stmt(Parser *parser){
     IfStmtBranch *if_branch = NULL;
     DynArr *elif_branches = NULL;
 	DynArr *else_stmts = NULL;
-    Token *branch_token = previous(parser);
+    Token *if_branch_token = previous(parser);
 
-    if_branch = parse_if_stmt_branch(branch_token, parser);
+    if_branch = parse_if_stmt_branch(if_branch_token, parser);
 
     if(check(parser, ELIF_TOKTYPE)){
         elif_branches = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
         while (match(parser, 1, ELIF_TOKTYPE)){
-            Token *previous_token = previous(parser);
-            IfStmtBranch *branch = parse_if_stmt_branch(previous_token, parser);
+            Token *elif_branch_token = previous(parser);
+            IfStmtBranch *branch = parse_if_stmt_branch(elif_branch_token, parser);
 
             dynarr_insert_ptr(elif_branches, branch);
         }
