@@ -26,47 +26,47 @@ static Token *previous(Parser *parser);
 static int is_at_end(Parser *parser);
 static int match(Parser *parser, int count, ...);
 static int check(Parser *parser, TokType type);
-Token *consume(Parser *parser, TokType type, char *err_msg, ...);
-DynArr *record_key_values(Token *record_token, Parser *parser);
+static Token *consume(Parser *parser, TokType type, char *err_msg, ...);
+static DynArr *record_key_values(Token *record_token, Parser *parser);
 //------------------------------  EXPRESSION  ------------------------------//
-Expr *parse_expr(Parser *paser);
-Expr *parse_assign(Parser *parser);
-Expr *parse_is_expr(Parser *parser);
-Expr *parse_tenary_expr(Parser *parser);
-Expr *parse_or(Parser *parser);
-Expr *parse_and(Parser *parser);
-Expr *parse_bitwise_or(Parser *parser);
-Expr *parse_bitwise_xor(Parser *parser);
-Expr *parse_bitwise_and(Parser *parser);
-Expr *parse_equality(Parser *parser);
-Expr *parse_relational(Parser *parser);
-Expr *parse_shift(Parser *parser);
-Expr *parse_concat(Parser *parser);
-Expr *parse_mulstr(Parser *parser);
-Expr *parse_term(Parser *parser);
-Expr *parse_factor(Parser *parser);
-Expr *parse_unary(Parser *parser);
-Expr *parse_call(Parser *parser);
-Expr *parse_record(Parser *parser, Token *type_token);
-Expr *parse_dict(Parser *parser, Token *type_token);
-Expr *parse_list(Parser *parser, Token *type_token);
-Expr *parse_array(Parser *parser, Token *type_token);
-Expr *parse_types(Parser *parser);
-Expr *parse_literal(Parser *parser);
+static Expr *parse_expr(Parser *paser);
+static Expr *parse_assign(Parser *parser);
+static Expr *parse_is_expr(Parser *parser);
+static Expr *parse_tenary_expr(Parser *parser);
+static Expr *parse_or(Parser *parser);
+static Expr *parse_and(Parser *parser);
+static Expr *parse_bitwise_or(Parser *parser);
+static Expr *parse_bitwise_xor(Parser *parser);
+static Expr *parse_bitwise_and(Parser *parser);
+static Expr *parse_equality(Parser *parser);
+static Expr *parse_relational(Parser *parser);
+static Expr *parse_shift(Parser *parser);
+static Expr *parse_concat(Parser *parser);
+static Expr *parse_mulstr(Parser *parser);
+static Expr *parse_term(Parser *parser);
+static Expr *parse_factor(Parser *parser);
+static Expr *parse_unary(Parser *parser);
+static Expr *parse_call(Parser *parser);
+static Expr *parse_record(Parser *parser, Token *type_token);
+static Expr *parse_dict(Parser *parser, Token *type_token);
+static Expr *parse_list(Parser *parser, Token *type_token);
+static Expr *parse_array(Parser *parser, Token *type_token);
+static Expr *parse_types(Parser *parser);
+static Expr *parse_literal(Parser *parser);
 //------------------------------  STATEMENT  -------------------------------//
-Stmt *parse_stmt(Parser *parser);
-Stmt *parse_expr_stmt(Parser *parser);
-DynArr *parse_block_stmt(Parser *parser);
-Stmt *parse_if_stmt(Parser *parser);
-Stmt *parse_while_stmt(Parser *parser);
-Stmt *parse_for_stmt(Parser *parser);
-Stmt *parse_throw_stmt(Parser *parser);
-Stmt *parse_try_stmt(Parser *parser);
-Stmt *parse_return_stmt(Parser *parser);
-Stmt *parse_var_decl_stmt(Parser *parser);
-Stmt *parse_function_stmt(Parser *parser);
-Stmt *parse_import_stmt(Parser *parser);
-Stmt *parse_export_stmt(Parser *parser);
+static Stmt *parse_stmt(Parser *parser);
+static Stmt *parse_expr_stmt(Parser *parser);
+static DynArr *parse_block_stmt(Parser *parser);
+static Stmt *parse_if_stmt(Parser *parser);
+static Stmt *parse_while_stmt(Parser *parser);
+static Stmt *parse_for_stmt(Parser *parser);
+static Stmt *parse_throw_stmt(Parser *parser);
+static Stmt *parse_try_stmt(Parser *parser);
+static Stmt *parse_return_stmt(Parser *parser);
+static Stmt *parse_var_decl_stmt(Parser *parser);
+static Stmt *parse_function_stmt(Parser *parser);
+static Stmt *parse_import_stmt(Parser *parser);
+static Stmt *parse_export_stmt(Parser *parser);
 //--------------------------------------------------------------------------//
 //                          PRIVATE IMPLEMENTATION                          //
 //--------------------------------------------------------------------------//
@@ -83,18 +83,24 @@ void error(Parser *parser, Token *token, char *msg, ...){
     longjmp(parser->err_buf, 1);
 }
 
-Expr *create_expr(ExprType type, void *sub_expr, Parser *parser){
+inline Expr *create_expr(ExprType type, void *sub_expr, Parser *parser){
     Expr *expr = MEMORY_ALLOC(CTALLOCATOR, Expr, 1);
-    expr->type = type;
-    expr->sub_expr = sub_expr;
+
+    *expr = (Expr){
+        .type = type,
+        .sub_expr = sub_expr
+    };
 
     return expr;
 }
 
-Stmt *create_stmt(StmtType type, void *sub_stmt, Parser *parser){
+inline Stmt *create_stmt(StmtType type, void *sub_stmt, Parser *parser){
     Stmt *stmt = MEMORY_ALLOC(CTALLOCATOR, Stmt, 1);
-    stmt->type = type;
-    stmt->sub_stmt = sub_stmt;
+
+    *stmt = (Stmt){
+        .type = type,
+        .sub_stmt = sub_stmt
+    };
 
     return stmt;
 }
