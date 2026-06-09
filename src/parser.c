@@ -47,10 +47,11 @@ Expr *parse_term(Parser *parser);
 Expr *parse_factor(Parser *parser);
 Expr *parse_unary(Parser *parser);
 Expr *parse_call(Parser *parser);
-Expr *parse_record(Parser *parser);
-Expr *parse_dict(Parser *parser);
-Expr *parse_list(Parser *parser);
-Expr *parse_array(Parser *parser);
+Expr *parse_record(Parser *parser, Token *type_token);
+Expr *parse_dict(Parser *parser, Token *type_token);
+Expr *parse_list(Parser *parser, Token *type_token);
+Expr *parse_array(Parser *parser, Token *type_token);
+Expr *parse_types(Parser *parser);
 Expr *parse_literal(Parser *parser);
 //------------------------------  STATEMENT  -------------------------------//
 Stmt *parse_stmt(Parser *parser);
@@ -567,7 +568,7 @@ Expr *parse_unary(Parser *parser){
 }
 
 Expr *parse_call(Parser *parser){
-    Expr *left = parse_record(parser);
+    Expr *left = parse_types(parser);
 
     if(check(parser, DOT_TOKTYPE) || check(parser, LEFT_PAREN_TOKTYPE) || check(parser, LEFT_SQUARE_TOKTYPE)){
         while (match(parser, 3, DOT_TOKTYPE, LEFT_PAREN_TOKTYPE, LEFT_SQUARE_TOKTYPE)){
@@ -641,161 +642,157 @@ Expr *parse_call(Parser *parser){
     return left;
 }
 
-Expr *parse_record(Parser *parser){
-    if(match(parser, 1, RECORD_TOKTYPE)){
-        Token *record_token = NULL;
-        DynArr *key_values = NULL;
+Expr *parse_record(Parser *parser, Token *type_token){
+    DynArr *key_values = NULL;
 
-        record_token = previous(parser);
+    consume(parser, LEFT_BRACKET_TOKTYPE, "Expect '{' after 'record' keyword at start of record body");
 
-        consume(parser, LEFT_BRACKET_TOKTYPE, "Expect '{' after 'record' keyword at start of record body");
-
-        if(!check(parser, RIGHT_BRACKET_TOKTYPE)){
-            key_values = record_key_values(record_token, parser);
-        }
-
-        consume(parser, RIGHT_BRACKET_TOKTYPE, "Expect '}' at end of record body");
-
-        RecordExpr *record_expr = MEMORY_ALLOC(CTALLOCATOR, RecordExpr, 1);
-
-        *record_expr = (RecordExpr){
-            .record_token = record_token,
-            .key_values = key_values
-        };
-
-        return create_expr(RECORD_EXPR_TYPE, record_expr, parser);
+    if(!check(parser, RIGHT_BRACKET_TOKTYPE)){
+        key_values = record_key_values(type_token, parser);
     }
 
-    return parse_dict(parser);
+    consume(parser, RIGHT_BRACKET_TOKTYPE, "Expect '}' at end of record body");
+
+    RecordExpr *record_expr = MEMORY_ALLOC(CTALLOCATOR, RecordExpr, 1);
+
+    *record_expr = (RecordExpr){
+        .record_token = type_token,
+        .key_values = key_values
+    };
+
+    return create_expr(RECORD_EXPR_TYPE, record_expr, parser);
 }
 
-Expr *parse_dict(Parser *parser){
-    if(match(parser, 1, DICT_TOKTYPE)){
-        Token *dict_token = NULL;
-        DynArr *key_values = NULL;
+Expr *parse_dict(Parser *parser, Token *type_token){
+    DynArr *key_values = NULL;
 
-        dict_token = previous(parser);
+    consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'dict' keyword");
 
-        consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'dict' keyword");
+    if(!check(parser, RIGHT_PAREN_TOKTYPE)){
+        key_values = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
-        if(!check(parser, RIGHT_PAREN_TOKTYPE)){
-            key_values = MEMORY_DYNARR_PTR(CTALLOCATOR);
+        do{
+            if(dynarr_len(key_values) >= INT16_MAX){
+                error(parser, type_token, "Dict expressions only accept up to %d values", INT16_MAX);
+            }
 
-            do{
-                if(dynarr_len(key_values) >= INT16_MAX){
-                    error(parser, dict_token, "Dict expressions only accept up to %d values", INT16_MAX);
-                }
+            Expr *key = parse_expr(parser);
 
-                Expr *key = parse_expr(parser);
+            consume(parser, TO_TOKTYPE, "Expect 'to' after keyword");
 
-                consume(parser, TO_TOKTYPE, "Expect 'to' after keyword");
+            Expr *value = parse_expr(parser);
+            DictKeyValue *key_value = MEMORY_ALLOC(CTALLOCATOR, DictKeyValue, 1);
 
-                Expr *value = parse_expr(parser);
-                DictKeyValue *key_value = MEMORY_ALLOC(CTALLOCATOR, DictKeyValue, 1);
+            *key_value = (DictKeyValue){
+                .key = key,
+                .value = value
+            };
 
-                *key_value = (DictKeyValue){
-                    .key = key,
-                    .value = value
-                };
-
-                dynarr_insert_ptr(key_values, key_value);
-            }while(match(parser, 1, COMMA_TOKTYPE));
-        }
-
-        consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of list expression");
-
-        DictExpr *dict_expr = MEMORY_ALLOC(CTALLOCATOR, DictExpr, 1);
-
-        *dict_expr = (DictExpr){
-            .dict_token = dict_token,
-            .key_values = key_values
-        };
-
-        return create_expr(DICT_EXPR_TYPE, dict_expr, parser);
+            dynarr_insert_ptr(key_values, key_value);
+        }while(match(parser, 1, COMMA_TOKTYPE));
     }
 
-    return parse_list(parser);
+    consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of list expression");
+
+    DictExpr *dict_expr = MEMORY_ALLOC(CTALLOCATOR, DictExpr, 1);
+
+    *dict_expr = (DictExpr){
+        .dict_token = type_token,
+        .key_values = key_values
+    };
+
+    return create_expr(DICT_EXPR_TYPE, dict_expr, parser);
 }
 
-Expr *parse_list(Parser *parser){
-	if(match(parser, 1, LIST_TOKTYPE)){
-        Token *list_token = NULL;
-        DynArr *exprs = NULL;
+Expr *parse_list(Parser *parser, Token *type_token){
+	DynArr *exprs = NULL;
 
-        list_token = previous(parser);
+    consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'list' keyword");
 
-        consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'list' keyword");
+    if(!check(parser, RIGHT_PAREN_TOKTYPE)){
+        exprs = MEMORY_DYNARR_PTR(CTALLOCATOR);
+
+        do{
+            if(dynarr_len(exprs) >= INT16_MAX){
+                error(parser, type_token, "List expressions only accept up to %d values", INT16_MAX);
+            }
+
+            Expr *expr = parse_expr(parser);
+
+            dynarr_insert_ptr(exprs, expr);
+        }while(match(parser, 1, COMMA_TOKTYPE));
+    }
+
+    consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of list expression");
+
+    ListExpr *list_expr = MEMORY_ALLOC(CTALLOCATOR, ListExpr, 1);
+
+    *list_expr = (ListExpr){
+        .list_token = type_token,
+        .exprs = exprs
+    };
+
+    return create_expr(LIST_EXPR_TYPE, list_expr, parser);
+}
+
+Expr *parse_array(Parser *parser, Token *type_token){
+    Expr *len_expr = NULL;
+    DynArr *values = NULL;
+
+    if(match(parser, 1, LEFT_SQUARE_TOKTYPE)){
+        len_expr = parse_expr(parser);
+
+        consume(parser, RIGHT_SQUARE_TOKTYPE, "Expect ']' after array length expression");
+    }else{
+        consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'array' keyword");
 
         if(!check(parser, RIGHT_PAREN_TOKTYPE)){
-            exprs = MEMORY_DYNARR_PTR(CTALLOCATOR);
+            values = MEMORY_DYNARR_PTR(CTALLOCATOR);
 
             do{
-                if(dynarr_len(exprs) >= INT16_MAX){
-                    error(parser, list_token, "List expressions only accept up to %d values", INT16_MAX);
+                if(dynarr_len(values) >= INT32_MAX){
+                    error(parser, type_token, "Array expressions only accept up to %d values", INT16_MAX);
                 }
 
                 Expr *expr = parse_expr(parser);
 
-                dynarr_insert_ptr(exprs, expr);
+                dynarr_insert_ptr(values, expr);
             }while(match(parser, 1, COMMA_TOKTYPE));
         }
 
-        consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of list expression");
-
-        ListExpr *list_expr = MEMORY_ALLOC(CTALLOCATOR, ListExpr, 1);
-
-        *list_expr = (ListExpr){
-            .list_token = list_token,
-            .exprs = exprs
-        };
-
-        return create_expr(LIST_EXPR_TYPE, list_expr, parser);
+        consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of array elements");
     }
 
-    return parse_array(parser);
+    ArrayExpr *array_expr = MEMORY_ALLOC(CTALLOCATOR, ArrayExpr, 1);
+
+    *array_expr = (ArrayExpr){
+        .array_token = type_token,
+        .len_expr = len_expr,
+        .values = values
+    };
+
+    return create_expr(ARRAY_EXPR_TYPE, array_expr, parser);
 }
 
-Expr *parse_array(Parser *parser){
-    if(match(parser, 1, ARRAY_TOKTYPE)){
-        Token *array_token = NULL;
-        Expr *len_expr = NULL;
-        DynArr *values = NULL;
+Expr *parse_types(Parser *parser){
+    if(match(parser, 4, RECORD_TOKTYPE, DICT_TOKTYPE, LIST_TOKTYPE, ARRAY_TOKTYPE)){
+        Token *type_token = previous(parser);
 
-        array_token = previous(parser);
+        switch (type_token->type){
+            case RECORD_TOKTYPE:{
+                return parse_record(parser, type_token);
+            }case DICT_TOKTYPE:{
+                return parse_dict(parser, type_token);
+            }case LIST_TOKTYPE:{
+                return parse_list(parser, type_token);
+            }case ARRAY_TOKTYPE:{
+                return parse_array(parser, type_token);
+            }default:{
+                assert(0 && "Illegal token type");
 
-        if(match(parser, 1, LEFT_SQUARE_TOKTYPE)){
-            len_expr = parse_expr(parser);
-
-            consume(parser, RIGHT_SQUARE_TOKTYPE, "Expect ']' after array length expression");
-        }else{
-            consume(parser, LEFT_PAREN_TOKTYPE, "Expect '(' after 'array' keyword");
-
-            if(!check(parser, RIGHT_PAREN_TOKTYPE)){
-                values = MEMORY_DYNARR_PTR(CTALLOCATOR);
-
-                do{
-                    if(dynarr_len(values) >= INT32_MAX){
-                        error(parser, array_token, "Array expressions only accept up to %d values", INT16_MAX);
-                    }
-
-                    Expr *expr = parse_expr(parser);
-
-                    dynarr_insert_ptr(values, expr);
-                }while(match(parser, 1, COMMA_TOKTYPE));
+                break;
             }
-
-            consume(parser, RIGHT_PAREN_TOKTYPE, "Expect ')' at end of array elements");
         }
-
-        ArrayExpr *array_expr = MEMORY_ALLOC(CTALLOCATOR, ArrayExpr, 1);
-
-        *array_expr = (ArrayExpr){
-            .array_token = array_token,
-            .len_expr = len_expr,
-            .values = values
-        };
-
-        return create_expr(ARRAY_EXPR_TYPE, array_expr, parser);
     }
 
     return parse_literal(parser);
